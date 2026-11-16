@@ -1,0 +1,759 @@
+{
+  "source": "kaggle:hydiexe/dataset-fix (raw_dataset)",
+  "target_size": [
+    512,
+    512
+  ],
+  "mode": "RGB",
+  "format": "PNG",
+  "preprocessing": "exif_transpose -> RGB -> aspect-preserving LANCZOS downscale (short=512) -> center crop 512x512",
+  "motifs": {
+    "parang": {
+      "count": 15,
+      "scanned": 15,
+      "skipped_small": 0,
+      "skipped_dup": 0,
+      "skipped_err": 0,
+      "samples": [
+        {
+          "filename": "parang_01.png",
+          "relative_path": "parang/parang_01.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-1-_jpg.rf.435225e675be03d3c962ee3bd53f9a96.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 8.54,
+          "edge_pair_ratio_ge16": 0.1573,
+          "source_sha256": "642bac15c48ab46d"
+        },
+        {
+          "filename": "parang_02.png",
+          "relative_path": "parang/parang_02.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-1-_jpg.rf.b6a04b8af468e4ad447b8725a0110e43.jpg",
+          "original_size": [
+            512,
+            660
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 15.5303,
+          "edge_pair_ratio_ge16": 0.2428,
+          "source_sha256": "37013f6f3a8406ea"
+        },
+        {
+          "filename": "parang_03.png",
+          "relative_path": "parang/parang_03.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-10-_jpg.rf.90af83b86eb96616b42ee188dbc428c0.jpg",
+          "original_size": [
+            515,
+            711
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 6.7007,
+          "edge_pair_ratio_ge16": 0.16,
+          "source_sha256": "10fd5bb0213bbb83"
+        },
+        {
+          "filename": "parang_04.png",
+          "relative_path": "parang/parang_04.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-10-_jpg.rf.d5c13934ea62eec215806ce7fdd65867.jpg",
+          "original_size": [
+            640,
+            933
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 16.1439,
+          "edge_pair_ratio_ge16": 0.2715,
+          "source_sha256": "f3b38cdf8708aed6"
+        },
+        {
+          "filename": "parang_05.png",
+          "relative_path": "parang/parang_05.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-10-_jpg.rf.f8330a064b5b81f5550781b6cd122e8b.jpg",
+          "original_size": [
+            518,
+            824
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 21.6214,
+          "edge_pair_ratio_ge16": 0.416,
+          "source_sha256": "4d44d1d02760b9a9"
+        },
+        {
+          "filename": "parang_06.png",
+          "relative_path": "parang/parang_06.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-11-_jpg.rf.5bad3cc4fd3632d694407e045f68a6a4.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 13.1258,
+          "edge_pair_ratio_ge16": 0.305,
+          "source_sha256": "3d6898c6d1632bdf"
+        },
+        {
+          "filename": "parang_07.png",
+          "relative_path": "parang/parang_07.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-12-_jpg.rf.8f68eda948c5e62b982859d0af5f3d1b.jpg",
+          "original_size": [
+            535,
+            730
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 3.1369,
+          "edge_pair_ratio_ge16": 0.0286,
+          "source_sha256": "7cd57de96b5c6264"
+        },
+        {
+          "filename": "parang_08.png",
+          "relative_path": "parang/parang_08.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-12-_jpg.rf.e1b8c0e7788705af588af302cf9d54fe.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 17.3471,
+          "edge_pair_ratio_ge16": 0.2814,
+          "source_sha256": "064075be8b6ad68c"
+        },
+        {
+          "filename": "parang_09.png",
+          "relative_path": "parang/parang_09.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-13-_jpg.rf.c908862c2131506267170967d6050b97.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 18.6293,
+          "edge_pair_ratio_ge16": 0.2776,
+          "source_sha256": "81960f1c7ddc2a90"
+        },
+        {
+          "filename": "parang_10.png",
+          "relative_path": "parang/parang_10.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-14-_jpg.rf.738b7ca0fa1704b5e4aceea95dad2514.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 11.9047,
+          "edge_pair_ratio_ge16": 0.135,
+          "source_sha256": "ad35b5aec4bdb86e"
+        },
+        {
+          "filename": "parang_11.png",
+          "relative_path": "parang/parang_11.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-15-_jpg.rf.1b22e2483315426c0da6054fbb44f676.jpg",
+          "original_size": [
+            523,
+            730
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 2.1406,
+          "edge_pair_ratio_ge16": 0.0029,
+          "source_sha256": "44399e913cf9d939"
+        },
+        {
+          "filename": "parang_12.png",
+          "relative_path": "parang/parang_12.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-15-_jpg.rf.c963fcf13566cf56205e8d5f51796017.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 15.5815,
+          "edge_pair_ratio_ge16": 0.2389,
+          "source_sha256": "037253a91165ddd6"
+        },
+        {
+          "filename": "parang_13.png",
+          "relative_path": "parang/parang_13.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-16-_jpg.rf.9ef5e51958e5d6ff57ba33b8b8d3413b.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 9.0802,
+          "edge_pair_ratio_ge16": 0.1623,
+          "source_sha256": "6ac5a649225f9b2c"
+        },
+        {
+          "filename": "parang_14.png",
+          "relative_path": "parang/parang_14.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-17-_jpg.rf.5d8686a529dd3675a8fb97c7fb7156ae.jpg",
+          "original_size": [
+            640,
+            934
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 9.4445,
+          "edge_pair_ratio_ge16": 0.1735,
+          "source_sha256": "0dd0fcfc00db52b5"
+        },
+        {
+          "filename": "parang_15.png",
+          "relative_path": "parang/parang_15.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_parang/-17-_jpg.rf.ed6a86f967858a4c22b7fd42b24bc3f3.jpg",
+          "original_size": [
+            535,
+            729
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 14.845,
+          "edge_pair_ratio_ge16": 0.3507,
+          "source_sha256": "dc5a9b176452c3bc"
+        }
+      ]
+    },
+    "kawung": {
+      "count": 15,
+      "scanned": 28,
+      "skipped_small": 13,
+      "skipped_dup": 0,
+      "skipped_err": 0,
+      "samples": [
+        {
+          "filename": "kawung_01.png",
+          "relative_path": "kawung/kawung_01.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-1-_jpg.rf.07e62d183b858d1b3439739aa2d55441.jpg",
+          "original_size": [
+            557,
+            867
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 16.8012,
+          "edge_pair_ratio_ge16": 0.3898,
+          "source_sha256": "4ccb8d81318ee8c1"
+        },
+        {
+          "filename": "kawung_02.png",
+          "relative_path": "kawung/kawung_02.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-1-_jpg.rf.4137dab94c111facfeb5f57dd16d78da.jpg",
+          "original_size": [
+            587,
+            827
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 12.7502,
+          "edge_pair_ratio_ge16": 0.2684,
+          "source_sha256": "88b9352528d267fa"
+        },
+        {
+          "filename": "kawung_03.png",
+          "relative_path": "kawung/kawung_03.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-12-_jpg.rf.13864d15f74238cd706fc841efad0d3f.jpg",
+          "original_size": [
+            640,
+            632
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 12.3355,
+          "edge_pair_ratio_ge16": 0.3001,
+          "source_sha256": "abe5caf07e40bad4"
+        },
+        {
+          "filename": "kawung_04.png",
+          "relative_path": "kawung/kawung_04.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-13-_jpg.rf.0ad67081619a380ef98429b3cf2f858b.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 18.3109,
+          "edge_pair_ratio_ge16": 0.3101,
+          "source_sha256": "2a2767467cc15701"
+        },
+        {
+          "filename": "kawung_05.png",
+          "relative_path": "kawung/kawung_05.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-14-_jpg.rf.7f8bc73f748cf49d62d08f2c8cbd3db6.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 9.7945,
+          "edge_pair_ratio_ge16": 0.1643,
+          "source_sha256": "e35af274ba3f64d0"
+        },
+        {
+          "filename": "kawung_06.png",
+          "relative_path": "kawung/kawung_06.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-15-_jpg.rf.dc29a41a4b05cbe5745aad4689981c94.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 14.2681,
+          "edge_pair_ratio_ge16": 0.3074,
+          "source_sha256": "c09626ca1674dd3f"
+        },
+        {
+          "filename": "kawung_07.png",
+          "relative_path": "kawung/kawung_07.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-16-_jpg.rf.7d558bd71465077beb2f50224504ff49.jpg",
+          "original_size": [
+            541,
+            808
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 11.6864,
+          "edge_pair_ratio_ge16": 0.2637,
+          "source_sha256": "0541f2846caec4eb"
+        },
+        {
+          "filename": "kawung_08.png",
+          "relative_path": "kawung/kawung_08.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-16-_jpg.rf.f37efbb5a2ae85c3580868fa73f915e3.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 11.6266,
+          "edge_pair_ratio_ge16": 0.2189,
+          "source_sha256": "0ebd5c702fd98c43"
+        },
+        {
+          "filename": "kawung_09.png",
+          "relative_path": "kawung/kawung_09.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-17-_jpg.rf.e964d5d8d3910cada0dc803082e073aa.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 15.9587,
+          "edge_pair_ratio_ge16": 0.2878,
+          "source_sha256": "783408a345f18522"
+        },
+        {
+          "filename": "kawung_10.png",
+          "relative_path": "kawung/kawung_10.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-18-_jpg.rf.19a0f68c496c58d0ccc96872460bbcc5.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 16.8308,
+          "edge_pair_ratio_ge16": 0.3623,
+          "source_sha256": "bdbc1a710728df36"
+        },
+        {
+          "filename": "kawung_11.png",
+          "relative_path": "kawung/kawung_11.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-19-_jpg.rf.0bfa5823bb8de7711c1bc30a511fbedf.jpg",
+          "original_size": [
+            512,
+            637
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 8.4748,
+          "edge_pair_ratio_ge16": 0.1668,
+          "source_sha256": "6ad583fda66ad2f2"
+        },
+        {
+          "filename": "kawung_12.png",
+          "relative_path": "kawung/kawung_12.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-19-_jpg.rf.816475f1a1eee0e739fdd3906ae3d8c7.jpg",
+          "original_size": [
+            530,
+            523
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 12.3919,
+          "edge_pair_ratio_ge16": 0.2819,
+          "source_sha256": "7d4ee165affc0bb7"
+        },
+        {
+          "filename": "kawung_13.png",
+          "relative_path": "kawung/kawung_13.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-2-_jpg.rf.72950bbe6b8341f5b0a2daa9b1739c68.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 12.1455,
+          "edge_pair_ratio_ge16": 0.2542,
+          "source_sha256": "d75b1e3e9178cdc7"
+        },
+        {
+          "filename": "kawung_14.png",
+          "relative_path": "kawung/kawung_14.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-20-_jpg.rf.29199ba467b8c3c2f20c3291f4cbda89.jpg",
+          "original_size": [
+            640,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 16.4055,
+          "edge_pair_ratio_ge16": 0.2703,
+          "source_sha256": "0c37f67d9a90c99b"
+        },
+        {
+          "filename": "kawung_15.png",
+          "relative_path": "kawung/kawung_15.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_kawung/-24-_jpg.rf.13ed478042e226010fb379e8bde273f5.jpg",
+          "original_size": [
+            640,
+            826
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 12.3153,
+          "edge_pair_ratio_ge16": 0.3009,
+          "source_sha256": "54387ff6a9d84646"
+        }
+      ]
+    },
+    "megamendung": {
+      "count": 15,
+      "scanned": 30,
+      "skipped_small": 15,
+      "skipped_dup": 0,
+      "skipped_err": 0,
+      "samples": [
+        {
+          "filename": "megamendung_01.png",
+          "relative_path": "megamendung/megamendung_01.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-0.jpg",
+          "original_size": [
+            2560,
+            1920
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 5.3936,
+          "edge_pair_ratio_ge16": 0.0698,
+          "source_sha256": "ba2a26635f2866ee"
+        },
+        {
+          "filename": "megamendung_02.png",
+          "relative_path": "megamendung/megamendung_02.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-10.jpg",
+          "original_size": [
+            2560,
+            1920
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 8.0319,
+          "edge_pair_ratio_ge16": 0.1176,
+          "source_sha256": "1dc7c180700d2566"
+        },
+        {
+          "filename": "megamendung_03.png",
+          "relative_path": "megamendung/megamendung_03.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-13.jpg",
+          "original_size": [
+            1400,
+            1400
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 11.426,
+          "edge_pair_ratio_ge16": 0.1488,
+          "source_sha256": "0abe70e45bc15ef5"
+        },
+        {
+          "filename": "megamendung_04.png",
+          "relative_path": "megamendung/megamendung_04.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-17.jpg",
+          "original_size": [
+            2560,
+            1920
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 6.1986,
+          "edge_pair_ratio_ge16": 0.0774,
+          "source_sha256": "733c52a70d977f8c"
+        },
+        {
+          "filename": "megamendung_05.png",
+          "relative_path": "megamendung/megamendung_05.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-21.jpg",
+          "original_size": [
+            578,
+            600
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 11.9766,
+          "edge_pair_ratio_ge16": 0.2117,
+          "source_sha256": "908e6c1ddc962aae"
+        },
+        {
+          "filename": "megamendung_06.png",
+          "relative_path": "megamendung/megamendung_06.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-22.jpg",
+          "original_size": [
+            2800,
+            2100
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 8.0784,
+          "edge_pair_ratio_ge16": 0.0975,
+          "source_sha256": "2a0bb4c9ba67f5fd"
+        },
+        {
+          "filename": "megamendung_07.png",
+          "relative_path": "megamendung/megamendung_07.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-28.jpg",
+          "original_size": [
+            1280,
+            960
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 9.1287,
+          "edge_pair_ratio_ge16": 0.1516,
+          "source_sha256": "3a78ad6ecd8c2b28"
+        },
+        {
+          "filename": "megamendung_08.png",
+          "relative_path": "megamendung/megamendung_08.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-39.jpg",
+          "original_size": [
+            1400,
+            1050
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 11.9473,
+          "edge_pair_ratio_ge16": 0.1426,
+          "source_sha256": "270f2662b3a1a567"
+        },
+        {
+          "filename": "megamendung_09.png",
+          "relative_path": "megamendung/megamendung_09.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-41.jpg",
+          "original_size": [
+            1400,
+            1400
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 9.8113,
+          "edge_pair_ratio_ge16": 0.1214,
+          "source_sha256": "f8e23456a9f75609"
+        },
+        {
+          "filename": "megamendung_10.png",
+          "relative_path": "megamendung/megamendung_10.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-47.jpg",
+          "original_size": [
+            576,
+            802
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 8.8573,
+          "edge_pair_ratio_ge16": 0.1439,
+          "source_sha256": "6bf2a73015467e3a"
+        },
+        {
+          "filename": "megamendung_11.png",
+          "relative_path": "megamendung/megamendung_11.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-54.jpg",
+          "original_size": [
+            798,
+            1124
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 13.1382,
+          "edge_pair_ratio_ge16": 0.2509,
+          "source_sha256": "55fbe9f439a87718"
+        },
+        {
+          "filename": "megamendung_12.png",
+          "relative_path": "megamendung/megamendung_12.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-60.jpg",
+          "original_size": [
+            1024,
+            576
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 15.9218,
+          "edge_pair_ratio_ge16": 0.3341,
+          "source_sha256": "5305b1947a399d92"
+        },
+        {
+          "filename": "megamendung_13.png",
+          "relative_path": "megamendung/megamendung_13.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-7.jpg",
+          "original_size": [
+            2560,
+            1920
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 10.6746,
+          "edge_pair_ratio_ge16": 0.1563,
+          "source_sha256": "e4611bb98c7557f2"
+        },
+        {
+          "filename": "megamendung_14.png",
+          "relative_path": "megamendung/megamendung_14.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-8.jpg",
+          "original_size": [
+            2816,
+            2112
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 5.1288,
+          "edge_pair_ratio_ge16": 0.0731,
+          "source_sha256": "59e477b130f7c19d"
+        },
+        {
+          "filename": "megamendung_15.png",
+          "relative_path": "megamendung/megamendung_15.png",
+          "source_zip_entry": "dataset_batik_fix/raw_dataset/batik_mega_mendung/megamendung-90.jpg",
+          "original_size": [
+            540,
+            675
+          ],
+          "curated_size": [
+            512,
+            512
+          ],
+          "mean_pair_diff": 6.5441,
+          "edge_pair_ratio_ge16": 0.1091,
+          "source_sha256": "207f8f90388b0f01"
+        }
+      ]
+    }
+  }
+}
