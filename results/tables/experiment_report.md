@@ -1,6 +1,6 @@
 # Laporan Hasil Eksperimen PVDM RGB Asimetris Berbasis HVS (Output 2)
 
-- **Dataset:** Citra Batik Nusantara 512×512 (24-bit RGB PNG) — `5` sampel per motif (`15` citra total: Parang, Kawung, Megamendung).
+- **Dataset:** Citra Batik Nusantara 512×512 (24-bit RGB PNG) — `15` sampel per motif (`45` citra total: Parang, Kawung, Megamendung).
 - **Skema Uji:** Skema 1 (*Awate & Patil 2016*), Skema 2 (*Symmetric 6-level PVDM*), Skema 3 (*Proposed Asymmetric HVS PVDM: Green 7-level, Red 6-level, Blue 5-level*).
 - **Verifikasi Lossless:** Seluruh skema & ukuran payload terverifikasi `BER = 0.0%`.
 - **Validasi Hipotesis HVS (Skema 3):** $\text{PSNR}_G$ selalu tertinggi ($\text{PSNR}_G > \max(\text{PSNR}_R, \text{PSNR}_B)$) pada semua tier & motif: **`True`**.
@@ -11,15 +11,15 @@
 
 | Motif | Scheme | Samples | Mean_R_Bytes | Mean_G_Bytes | Mean_B_Bytes | Mean_Total_Bytes | Mean_Total_Bits | Mean_BPP | Gain_vs_S1_% | Gain_vs_S2_% |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Parang | Scheme 1 (Awate & Patil 2016) | 5 | 0.0000 | 13962.60 | 13907.00 | 27870.00 | 222962.80 | 0.8505 | 0.0000 | -83.54 |
-| Parang | Scheme 2 (Symmetric PVDM) | 5 | 56538.00 | 56591.20 | 56224.20 | 169354.00 | 1354834.40 | 5.1683 | 507.66 | 0.0000 |
-| Parang | Scheme 3 (Proposed HVS PVDM) | 5 | 56538.00 | 46442.20 | 68627.80 | 171608.60 | 1372871.80 | 5.2371 | 515.75 | 1.3300 |
-| Kawung | Scheme 1 (Awate & Patil 2016) | 5 | 0.0000 | 13875.80 | 13977.00 | 27853.20 | 222828.80 | 0.8500 | 0.0000 | -83.52 |
-| Kawung | Scheme 2 (Symmetric PVDM) | 5 | 56479.40 | 56528.40 | 56047.40 | 169056.20 | 1352454.80 | 5.1592 | 506.95 | 0.0000 |
-| Kawung | Scheme 3 (Proposed HVS PVDM) | 5 | 56479.40 | 48289.20 | 67888.00 | 172657.60 | 1381263.60 | 5.2691 | 519.88 | 2.1300 |
-| Megamendung | Scheme 1 (Awate & Patil 2016) | 5 | 0.0000 | 12051.00 | 12718.60 | 24770.40 | 198165.40 | 0.7559 | 0.0000 | -84.35 |
-| Megamendung | Scheme 2 (Symmetric PVDM) | 5 | 53503.20 | 52973.20 | 51776.60 | 158254.00 | 1266035.40 | 4.8295 | 538.88 | 0.0000 |
-| Megamendung | Scheme 3 (Proposed HVS PVDM) | 5 | 53503.20 | 40608.00 | 66506.20 | 160618.60 | 1284951.80 | 4.9017 | 548.43 | 1.4900 |
+| Parang | Scheme 1 (Awate & Patil 2016) | 15 | 0.0000 | 13667.40 | 13488.53 | 27156.33 | 217254.00 | 0.8288 | 0.0000 | -83.63 |
+| Parang | Scheme 2 (Symmetric PVDM) | 15 | 55296.73 | 55433.07 | 55150.93 | 165881.60 | 1327055.80 | 5.0623 | 510.84 | 0.0000 |
+| Parang | Scheme 3 (Proposed HVS PVDM) | 15 | 55296.73 | 44761.40 | 68116.27 | 168175.33 | 1345405.93 | 5.1323 | 519.29 | 1.3800 |
+| Kawung | Scheme 1 (Awate & Patil 2016) | 15 | 0.0000 | 13761.67 | 13860.67 | 27622.67 | 220984.87 | 0.8430 | 0.0000 | -83.55 |
+| Kawung | Scheme 2 (Symmetric PVDM) | 15 | 56057.87 | 56063.00 | 55839.07 | 167960.87 | 1343690.80 | 5.1258 | 508.05 | 0.0000 |
+| Kawung | Scheme 3 (Proposed HVS PVDM) | 15 | 56057.87 | 47681.67 | 67734.80 | 171475.13 | 1371804.93 | 5.2330 | 520.78 | 2.0900 |
+| Megamendung | Scheme 1 (Awate & Patil 2016) | 15 | 0.0000 | 12160.33 | 12178.60 | 24339.47 | 194718.80 | 0.7428 | 0.0000 | -84.79 |
+| Megamendung | Scheme 2 (Symmetric PVDM) | 15 | 53868.53 | 53372.00 | 52792.93 | 160034.33 | 1280278.00 | 4.8839 | 557.51 | 0.0000 |
+| Megamendung | Scheme 3 (Proposed HVS PVDM) | 15 | 53868.53 | 41353.67 | 66958.53 | 162181.73 | 1297457.27 | 4.9494 | 566.33 | 1.3400 |
 
 ---
 
@@ -29,36 +29,36 @@
 
 | Motif | Scheme | Payload_Tier | Mean_Payload_Bytes | Mean_MSE_RGB | Mean_PSNR_R | Mean_PSNR_G | Mean_PSNR_B | Mean_PSNR_RGB | Mean_SSIM_RGB | Mean_SSIM_Y | Max_BER_Pct | Mean_FOBP |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Parang | Scheme 1 (Awate & Patil 2016) | 10 KB | 10240.00 | 0.4760 | inf | 50.06 | 50.27 | 51.93 | 0.9994 | 0.9997 | 0.0000 | 322.40 |
-| Parang | Scheme 1 (Awate & Patil 2016) | Full | 27866.00 | 1.3957 | inf | 45.51 | 45.71 | 47.37 | 0.9984 | 0.9992 | 0.0000 | 873.20 |
-| Parang | Scheme 2 (Symmetric PVDM) | 10 KB | 10240.00 | 0.5046 | 51.65 | 51.70 | 51.92 | 51.75 | 0.9995 | 0.9998 | 0.0000 | 308.40 |
-| Parang | Scheme 2 (Symmetric PVDM) | 50 KB | 51200.00 | 2.4242 | 44.71 | 44.84 | 45.04 | 44.86 | 0.9970 | 0.9986 | 0.0000 | 1506.60 |
-| Parang | Scheme 2 (Symmetric PVDM) | 100 KB | 102400.00 | 4.9443 | 41.62 | 41.77 | 41.97 | 41.78 | 0.9942 | 0.9973 | 0.0000 | 2961.20 |
-| Parang | Scheme 2 (Symmetric PVDM) | Full | 169350.00 | 8.7683 | 39.26 | 39.42 | 39.61 | 39.42 | 0.9908 | 0.9958 | 0.0000 | 5389.00 |
-| Parang | Scheme 3 (Proposed HVS PVDM) | 10 KB | 10240.00 | 0.5496 | 51.68 | 52.38 | 50.01 | 51.17 | 0.9993 | 0.9998 | 0.0000 | 290.40 |
-| Parang | Scheme 3 (Proposed HVS PVDM) | 50 KB | 51200.00 | 2.6729 | 44.79 | 45.49 | 43.05 | 44.26 | 0.9958 | 0.9991 | 0.0000 | 1478.20 |
-| Parang | Scheme 3 (Proposed HVS PVDM) | 100 KB | 102400.00 | 5.4074 | 41.70 | 42.42 | 40.02 | 41.21 | 0.9917 | 0.9982 | 0.0000 | 2966.00 |
-| Parang | Scheme 3 (Proposed HVS PVDM) | Full | 171604.60 | 9.6478 | 39.27 | 40.00 | 37.67 | 38.81 | 0.9866 | 0.9971 | 0.0000 | 5510.40 |
-| Kawung | Scheme 1 (Awate & Patil 2016) | 10 KB | 10240.00 | 0.4265 | inf | 50.38 | 50.56 | 52.23 | 0.9997 | 0.9998 | 0.0000 | 250.80 |
-| Kawung | Scheme 1 (Awate & Patil 2016) | Full | 27849.20 | 1.2183 | inf | 46.00 | 46.04 | 47.78 | 0.9991 | 0.9995 | 0.0000 | 743.00 |
-| Kawung | Scheme 2 (Symmetric PVDM) | 10 KB | 10240.00 | 0.4238 | 52.22 | 52.27 | 52.37 | 52.28 | 0.9997 | 0.9998 | 0.0000 | 219.60 |
-| Kawung | Scheme 2 (Symmetric PVDM) | 50 KB | 51200.00 | 2.1687 | 45.13 | 45.08 | 45.21 | 45.14 | 0.9983 | 0.9992 | 0.0000 | 1341.40 |
-| Kawung | Scheme 2 (Symmetric PVDM) | 100 KB | 102400.00 | 4.5174 | 42.00 | 41.98 | 42.09 | 42.02 | 0.9967 | 0.9985 | 0.0000 | 2972.80 |
-| Kawung | Scheme 2 (Symmetric PVDM) | Full | 169052.20 | 7.6746 | 39.81 | 39.81 | 39.91 | 39.84 | 0.9946 | 0.9975 | 0.0000 | 5114.60 |
-| Kawung | Scheme 3 (Proposed HVS PVDM) | 10 KB | 10240.00 | 0.4674 | 52.29 | 52.79 | 50.52 | 51.73 | 0.9996 | 0.9999 | 0.0000 | 255.80 |
-| Kawung | Scheme 3 (Proposed HVS PVDM) | 50 KB | 51200.00 | 2.3768 | 45.22 | 45.65 | 43.46 | 44.65 | 0.9977 | 0.9994 | 0.0000 | 1503.40 |
-| Kawung | Scheme 3 (Proposed HVS PVDM) | 100 KB | 102400.00 | 4.9403 | 42.11 | 42.50 | 40.34 | 41.54 | 0.9955 | 0.9988 | 0.0000 | 3273.40 |
-| Kawung | Scheme 3 (Proposed HVS PVDM) | Full | 172653.60 | 8.5811 | 39.81 | 40.21 | 38.05 | 39.23 | 0.9925 | 0.9980 | 0.0000 | 5773.00 |
-| Megamendung | Scheme 1 (Awate & Patil 2016) | 10 KB | 10240.00 | 0.3399 | inf | 50.53 | 52.28 | 53.03 | 0.9994 | 0.9997 | 0.0000 | 143.60 |
-| Megamendung | Scheme 1 (Awate & Patil 2016) | Full | 24766.40 | 0.8463 | inf | 46.57 | 48.40 | 49.10 | 0.9986 | 0.9993 | 0.0000 | 337.80 |
-| Megamendung | Scheme 2 (Symmetric PVDM) | 10 KB | 10240.00 | 0.5296 | 50.43 | 51.95 | 54.30 | 51.81 | 0.9994 | 0.9997 | 0.0000 | 724.20 |
-| Megamendung | Scheme 2 (Symmetric PVDM) | 50 KB | 51200.00 | 2.4144 | 43.60 | 44.94 | 47.11 | 44.87 | 0.9968 | 0.9985 | 0.0000 | 4172.20 |
-| Megamendung | Scheme 2 (Symmetric PVDM) | 100 KB | 102400.00 | 4.9053 | 40.43 | 41.78 | 43.94 | 41.71 | 0.9936 | 0.9971 | 0.0000 | 8093.20 |
-| Megamendung | Scheme 2 (Symmetric PVDM) | Full | 158250.00 | 7.3414 | 38.76 | 40.09 | 42.19 | 40.02 | 0.9902 | 0.9956 | 0.0000 | 11570.60 |
-| Megamendung | Scheme 3 (Proposed HVS PVDM) | 10 KB | 10240.00 | 0.5801 | 50.44 | 52.70 | 51.17 | 51.13 | 0.9991 | 0.9998 | 0.0000 | 688.80 |
-| Megamendung | Scheme 3 (Proposed HVS PVDM) | 50 KB | 51200.00 | 2.6821 | 43.66 | 45.85 | 43.98 | 44.23 | 0.9951 | 0.9990 | 0.0000 | 4037.20 |
-| Megamendung | Scheme 3 (Proposed HVS PVDM) | 100 KB | 102400.00 | 5.4868 | 40.47 | 42.58 | 40.91 | 41.07 | 0.9902 | 0.9981 | 0.0000 | 7900.20 |
-| Megamendung | Scheme 3 (Proposed HVS PVDM) | Full | 160614.60 | 8.4316 | 38.70 | 40.81 | 39.04 | 39.27 | 0.9847 | 0.9970 | 0.0000 | 11507.20 |
+| Parang | Scheme 1 (Awate & Patil 2016) | 10 KB | 10240.00 | 0.5317 | inf | 50.25 | 50.29 | 52.03 | 0.9994 | 0.9997 | 0.0000 | 412.80 |
+| Parang | Scheme 1 (Awate & Patil 2016) | Full | 27152.33 | 1.4867 | inf | 45.81 | 45.89 | 47.61 | 0.9984 | 0.9992 | 0.0000 | 1197.27 |
+| Parang | Scheme 2 (Symmetric PVDM) | 10 KB | 10240.00 | 0.5601 | 51.94 | 51.93 | 51.90 | 51.92 | 0.9995 | 0.9998 | 0.0000 | 506.13 |
+| Parang | Scheme 2 (Symmetric PVDM) | 50 KB | 51200.00 | 2.6373 | 44.99 | 45.04 | 45.07 | 45.03 | 0.9970 | 0.9987 | 0.0000 | 2480.93 |
+| Parang | Scheme 2 (Symmetric PVDM) | 100 KB | 102400.00 | 5.3015 | 41.92 | 41.96 | 42.02 | 41.97 | 0.9940 | 0.9974 | 0.0000 | 5172.40 |
+| Parang | Scheme 2 (Symmetric PVDM) | Full | 165877.60 | 9.0210 | 39.74 | 39.76 | 39.81 | 39.77 | 0.9903 | 0.9958 | 0.0000 | 8846.80 |
+| Parang | Scheme 3 (Proposed HVS PVDM) | 10 KB | 10240.00 | 0.6161 | 51.94 | 52.99 | 49.75 | 51.19 | 0.9992 | 0.9998 | 0.0000 | 547.73 |
+| Parang | Scheme 3 (Proposed HVS PVDM) | 50 KB | 51200.00 | 2.9283 | 45.05 | 46.06 | 42.81 | 44.28 | 0.9952 | 0.9991 | 0.0000 | 2692.67 |
+| Parang | Scheme 3 (Proposed HVS PVDM) | 100 KB | 102400.00 | 5.8635 | 41.99 | 42.95 | 39.78 | 41.23 | 0.9902 | 0.9982 | 0.0000 | 5639.33 |
+| Parang | Scheme 3 (Proposed HVS PVDM) | Full | 168171.33 | 10.09 | 39.74 | 40.69 | 37.53 | 38.97 | 0.9839 | 0.9970 | 0.0000 | 9822.07 |
+| Kawung | Scheme 1 (Awate & Patil 2016) | 10 KB | 10240.00 | 0.4056 | inf | 50.69 | 50.78 | 52.50 | 0.9997 | 0.9998 | 0.0000 | 264.67 |
+| Kawung | Scheme 1 (Awate & Patil 2016) | Full | 27618.67 | 1.1125 | inf | 46.38 | 46.40 | 48.15 | 0.9992 | 0.9995 | 0.0000 | 716.47 |
+| Kawung | Scheme 2 (Symmetric PVDM) | 10 KB | 10240.00 | 0.4038 | 52.47 | 52.50 | 52.58 | 52.51 | 0.9997 | 0.9999 | 0.0000 | 292.20 |
+| Kawung | Scheme 2 (Symmetric PVDM) | 50 KB | 51200.00 | 2.0281 | 45.43 | 45.47 | 45.53 | 45.48 | 0.9984 | 0.9993 | 0.0000 | 1577.00 |
+| Kawung | Scheme 2 (Symmetric PVDM) | 100 KB | 102400.00 | 4.1794 | 42.33 | 42.39 | 42.43 | 42.39 | 0.9969 | 0.9985 | 0.0000 | 3261.80 |
+| Kawung | Scheme 2 (Symmetric PVDM) | Full | 167956.87 | 6.9227 | 40.20 | 40.27 | 40.30 | 40.25 | 0.9948 | 0.9976 | 0.0000 | 5482.47 |
+| Kawung | Scheme 3 (Proposed HVS PVDM) | 10 KB | 10240.00 | 0.4464 | 52.57 | 53.09 | 50.66 | 51.95 | 0.9996 | 0.9999 | 0.0000 | 314.33 |
+| Kawung | Scheme 3 (Proposed HVS PVDM) | 50 KB | 51200.00 | 2.2459 | 45.53 | 46.07 | 43.65 | 44.93 | 0.9979 | 0.9994 | 0.0000 | 1697.07 |
+| Kawung | Scheme 3 (Proposed HVS PVDM) | 100 KB | 102400.00 | 4.6325 | 42.43 | 42.95 | 40.55 | 41.83 | 0.9958 | 0.9988 | 0.0000 | 3509.07 |
+| Kawung | Scheme 3 (Proposed HVS PVDM) | Full | 171471.13 | 7.8319 | 40.20 | 40.73 | 38.31 | 39.59 | 0.9928 | 0.9981 | 0.0000 | 6007.67 |
+| Megamendung | Scheme 1 (Awate & Patil 2016) | 10 KB | 10240.00 | 0.3882 | inf | 50.47 | 51.68 | 52.71 | 0.9994 | 0.9997 | 0.0000 | 126.64 |
+| Megamendung | Scheme 1 (Awate & Patil 2016) | Full | 24335.47 | 1.0671 | inf | 46.16 | 47.37 | 48.40 | 0.9987 | 0.9993 | 0.0000 | 383.07 |
+| Megamendung | Scheme 2 (Symmetric PVDM) | 10 KB | 10240.00 | 0.5288 | 50.74 | 51.84 | 53.30 | 51.72 | 0.9994 | 0.9997 | 0.0000 | 760.87 |
+| Megamendung | Scheme 2 (Symmetric PVDM) | 50 KB | 51200.00 | 2.6300 | 43.67 | 44.70 | 46.12 | 44.60 | 0.9969 | 0.9986 | 0.0000 | 3741.00 |
+| Megamendung | Scheme 2 (Symmetric PVDM) | 100 KB | 102400.00 | 5.3056 | 40.59 | 41.62 | 43.00 | 41.52 | 0.9938 | 0.9971 | 0.0000 | 7263.20 |
+| Megamendung | Scheme 2 (Symmetric PVDM) | Full | 160030.33 | 8.2751 | 38.74 | 39.73 | 41.11 | 39.64 | 0.9903 | 0.9955 | 0.0000 | 10929.13 |
+| Megamendung | Scheme 3 (Proposed HVS PVDM) | 10 KB | 10240.00 | 0.5770 | 50.78 | 52.62 | 50.68 | 51.10 | 0.9991 | 0.9998 | 0.0000 | 712.27 |
+| Megamendung | Scheme 3 (Proposed HVS PVDM) | 50 KB | 51200.00 | 2.8558 | 43.73 | 45.54 | 43.59 | 44.05 | 0.9954 | 0.9990 | 0.0000 | 3532.87 |
+| Megamendung | Scheme 3 (Proposed HVS PVDM) | 100 KB | 102400.00 | 5.8073 | 40.62 | 42.38 | 40.53 | 40.95 | 0.9909 | 0.9980 | 0.0000 | 6839.73 |
+| Megamendung | Scheme 3 (Proposed HVS PVDM) | Full | 162177.73 | 9.2332 | 38.71 | 40.43 | 38.54 | 39.00 | 0.9855 | 0.9969 | 0.0000 | 10406.73 |
 
 ---
 
@@ -66,12 +66,12 @@
 
 | Motif | Samples | Mean_Abs_Diff | Smooth_Area_Pct | Edge_Area_Pct | Extreme_Edge_Pct | S3_Mean_Cap_Bytes | S3_Mean_BPP | S1_Mean_FOBP | S2_Mean_FOBP | S3_Mean_FOBP | S3_Mean_FOBP_R | S3_Mean_FOBP_G | S3_Mean_FOBP_B | S3_FOBP_Rate_Pct |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Parang | 5 | 13.71 | 75.05 | 24.95 | 0.0969 | 171608.60 | 5.2371 | 873.20 | 5389.00 | 5510.40 | 1802.40 | 925.60 | 2782.40 | 1.4014 |
-| Kawung | 5 | 14.00 | 71.35 | 28.65 | 0.2107 | 172657.60 | 5.2691 | 743.00 | 5114.60 | 5773.00 | 1685.80 | 672.00 | 3415.20 | 1.4682 |
-| Megamendung | 5 | 8.6053 | 87.49 | 12.51 | 0.4163 | 160618.60 | 4.9017 | 337.80 | 11570.60 | 11507.20 | 6903.80 | 1765.40 | 2838.00 | 2.9264 |
+| Parang | 15 | 12.25 | 78.64 | 21.36 | 0.3798 | 168175.33 | 5.1323 | 1197.27 | 8846.80 | 9822.07 | 3036.33 | 1435.67 | 5350.07 | 2.4979 |
+| Kawung | 15 | 13.47 | 72.35 | 27.65 | 0.1208 | 171475.13 | 5.2330 | 716.47 | 5482.47 | 6007.67 | 2172.60 | 798.53 | 3036.53 | 1.5278 |
+| Megamendung | 15 | 9.4838 | 85.29 | 14.71 | 0.5407 | 162181.73 | 4.9494 | 383.07 | 10929.13 | 10406.73 | 6276.67 | 2295.80 | 1834.27 | 2.6466 |
 
-- **Korelasi Pearson (`Edge_Area_%` vs `S3_BPP`):** `r = 0.9621` (semakin rapat tepi motif Batik, semakin besar kapasitas penyisipan).
-- **Korelasi Pearson (`Edge_Area_%` vs `S3_FOBP_Full`):** `r = -0.3793`.
+- **Korelasi Pearson (`Edge_Area_%` vs `S3_BPP`):** `r = 0.9574` (semakin rapat tepi motif Batik, semakin besar kapasitas penyisipan).
+- **Korelasi Pearson (`Edge_Area_%` vs `S3_FOBP_Full`):** `r = -0.1933`.
 
 ---
 
@@ -81,116 +81,116 @@
 {
   "parang": {
     "scheme1": {
-      "images_evaluated": 5,
-      "total_fobp": 4366,
-      "mean_fobp_per_image": 873.2,
+      "images_evaluated": 15,
+      "total_fobp": 17959,
+      "mean_fobp_per_image": 1197.2666666666667,
       "per_channel_fobp": {
         "R": 0,
-        "G": 2069,
-        "B": 2297
+        "G": 6271,
+        "B": 11688
       },
-      "total_used_pairs": 324202,
-      "fobp_rate_percent": 1.3466912603870427
+      "total_used_pairs": 966239,
+      "fobp_rate_percent": 1.858649878549717
     },
     "scheme2": {
-      "images_evaluated": 5,
-      "total_fobp": 26945,
-      "mean_fobp_per_image": 5389.0,
+      "images_evaluated": 15,
+      "total_fobp": 132702,
+      "mean_fobp_per_image": 8846.8,
       "per_channel_fobp": {
-        "R": 9096,
-        "G": 8611,
-        "B": 9238
+        "R": 45533,
+        "G": 34096,
+        "B": 53073
       },
-      "total_used_pairs": 655360,
-      "fobp_rate_percent": 1.3704935709635415
+      "total_used_pairs": 1966080,
+      "fobp_rate_percent": 2.2498575846354165
     },
     "scheme3": {
-      "images_evaluated": 5,
-      "total_fobp": 27552,
-      "mean_fobp_per_image": 5510.4,
+      "images_evaluated": 15,
+      "total_fobp": 147331,
+      "mean_fobp_per_image": 9822.066666666668,
       "per_channel_fobp": {
-        "R": 9012,
-        "G": 4628,
-        "B": 13912
+        "R": 45545,
+        "G": 21535,
+        "B": 80251
       },
-      "total_used_pairs": 655360,
-      "fobp_rate_percent": 1.4013671875
+      "total_used_pairs": 1966080,
+      "fobp_rate_percent": 2.4978807237413196
     }
   },
   "kawung": {
     "scheme1": {
-      "images_evaluated": 5,
-      "total_fobp": 3715,
-      "mean_fobp_per_image": 743.0,
+      "images_evaluated": 15,
+      "total_fobp": 10747,
+      "mean_fobp_per_image": 716.4666666666667,
       "per_channel_fobp": {
         "R": 0,
-        "G": 800,
-        "B": 2915
+        "G": 3306,
+        "B": 7441
       },
-      "total_used_pairs": 324327,
-      "fobp_rate_percent": 1.1454488833800454
+      "total_used_pairs": 970072,
+      "fobp_rate_percent": 1.10785591172614
     },
     "scheme2": {
-      "images_evaluated": 5,
-      "total_fobp": 25573,
-      "mean_fobp_per_image": 5114.6,
+      "images_evaluated": 15,
+      "total_fobp": 82237,
+      "mean_fobp_per_image": 5482.466666666666,
       "per_channel_fobp": {
-        "R": 8467,
-        "G": 4363,
-        "B": 12743
+        "R": 32411,
+        "G": 17083,
+        "B": 32743
       },
-      "total_used_pairs": 655360,
-      "fobp_rate_percent": 1.3007100423177083
+      "total_used_pairs": 1966080,
+      "fobp_rate_percent": 1.3942633734809027
     },
     "scheme3": {
-      "images_evaluated": 5,
-      "total_fobp": 28865,
-      "mean_fobp_per_image": 5773.0,
+      "images_evaluated": 15,
+      "total_fobp": 90115,
+      "mean_fobp_per_image": 6007.666666666667,
       "per_channel_fobp": {
-        "R": 8429,
-        "G": 3360,
-        "B": 17076
+        "R": 32589,
+        "G": 11978,
+        "B": 45548
       },
-      "total_used_pairs": 655360,
-      "fobp_rate_percent": 1.4681498209635415
+      "total_used_pairs": 1966080,
+      "fobp_rate_percent": 1.5278286404079862
     }
   },
   "megamendung": {
     "scheme1": {
-      "images_evaluated": 5,
-      "total_fobp": 1689,
-      "mean_fobp_per_image": 337.8,
+      "images_evaluated": 15,
+      "total_fobp": 5746,
+      "mean_fobp_per_image": 383.06666666666666,
       "per_channel_fobp": {
         "R": 0,
-        "G": 830,
-        "B": 859
+        "G": 2919,
+        "B": 2827
       },
-      "total_used_pairs": 309518,
-      "fobp_rate_percent": 0.5456871652052546
+      "total_used_pairs": 898544,
+      "fobp_rate_percent": 0.639478979326555
     },
     "scheme2": {
-      "images_evaluated": 5,
-      "total_fobp": 57853,
-      "mean_fobp_per_image": 11570.6,
+      "images_evaluated": 15,
+      "total_fobp": 163937,
+      "mean_fobp_per_image": 10929.133333333333,
       "per_channel_fobp": {
-        "R": 34349,
-        "G": 13161,
-        "B": 10343
+        "R": 93526,
+        "G": 49674,
+        "B": 20737
       },
-      "total_used_pairs": 655360,
-      "fobp_rate_percent": 2.9425557454427085
+      "total_used_pairs": 1966080,
+      "fobp_rate_percent": 2.779422336154514
     },
     "scheme3": {
-      "images_evaluated": 5,
-      "total_fobp": 57536,
-      "mean_fobp_per_image": 11507.2,
+      "images_evaluated": 15,
+      "total_fobp": 156101,
+      "mean_fobp_per_image": 10406.733333333334,
       "per_channel_fobp": {
-        "R": 34519,
-        "G": 8827,
-        "B": 14190
+        "R": 94150,
+        "G": 34437,
+        "B": 27514
       },
-      "total_used_pairs": 655360,
-      "fobp_rate_percent": 2.9264322916666665
+      "total_used_pairs": 1966080,
+      "fobp_rate_percent": 2.6465691460503473
     }
   }
 }
