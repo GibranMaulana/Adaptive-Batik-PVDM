@@ -239,19 +239,20 @@ def embed_pair(
     m  = abs(frem - b)
     m1 = power - m
 
-    # Determine shift direction and magnitude using Wang et al. Table 1 rules.
-    # Key insight: choose whichever of (m, m1) is smaller to minimise MSE.
+    # Determine shift direction and magnitude using Wang et al. (2008) Step 3
+    # (8 optimal cases, exact match to pvdmbase.md Section 4.B):
+    #   Key insight: choose whichever of (m, m1) is smaller to minimise MSE,
+    #   and shift inward (larger half from larger pixel when subtracting;
+    #   larger half to smaller pixel when adding) to reduce distortion & FOBP.
     #
-    # Convention from Wang et al. (2008), verified against Table 2 & Table 3:
-    #   "SUBTRACT" scenarios (Cases 1,2,7,8): split m or m1 so that the
-    #     larger half goes to the pixel with more "room" to shift.
-    #   "ADD" scenarios (Cases 3,4,5,6): same split but adding.
-    #
-    #   Verified pattern for px >= py (Table 2, px=py=32, t=3):
-    #     Case 1 (frem>b, m<=half): px -= ceil(m/2),  py -= floor(m/2)
-    #     Case 3 (frem>b, m>half):  px += floor(m1/2), py += ceil(m1/2)
-    #     Case 5 (frem<=b, m<=half): px += ceil(m/2),  py += floor(m/2)
-    #     Case 7 (frem<=b, m>half): px -= floor(m1/2), py -= ceil(m1/2)
+    #   Case 1 (frem >  b, m <= half, px >= py): (px - ceil(m/2),   py - floor(m/2))
+    #   Case 2 (frem >  b, m <= half, px <  py): (px - floor(m/2),  py - ceil(m/2))
+    #   Case 3 (frem >  b, m >  half, px >= py): (px + floor(m1/2), py + ceil(m1/2))
+    #   Case 4 (frem >  b, m >  half, px <  py): (px + ceil(m1/2),  py + floor(m1/2))
+    #   Case 5 (frem <= b, m <= half, px >= py): (px + floor(m/2),  py + ceil(m/2))
+    #   Case 6 (frem <= b, m <= half, px <  py): (px + ceil(m/2),   py + floor(m/2))
+    #   Case 7 (frem <= b, m >  half, px >= py): (px - ceil(m1/2),  py - floor(m1/2))
+    #   Case 8 (frem <= b, m >  half, px <  py): (px - floor(m1/2), py - ceil(m1/2))
     if frem > b:
         if m <= half:
             # Cases 1 & 2: subtract m
@@ -277,23 +278,23 @@ def embed_pair(
         if m <= half:
             # Cases 5 & 6: add m
             if px >= py:
-                # Case 5  (px gets +ceil; Table 2 b=1: (32,32)->(33,32) ✓)
-                nx = px + _ceil(m / 2)
-                ny = py + _floor(m / 2)
-            else:
-                # Case 6
+                # Case 5
                 nx = px + _floor(m / 2)
                 ny = py + _ceil(m / 2)
+            else:
+                # Case 6
+                nx = px + _ceil(m / 2)
+                ny = py + _floor(m / 2)
         else:
             # Cases 7 & 8: subtract m1 (complement)
             if px >= py:
-                # Case 7  (px gets -floor; Table 2 b=5: (32,32)->(30,29) ✓)
-                nx = px - _floor(m1 / 2)
-                ny = py - _ceil(m1 / 2)
-            else:
-                # Case 8
+                # Case 7
                 nx = px - _ceil(m1 / 2)
                 ny = py - _floor(m1 / 2)
+            else:
+                # Case 8
+                nx = px - _floor(m1 / 2)
+                ny = py - _ceil(m1 / 2)
 
     # --- Step 4: FOBP correction ---
     fobp_flag = False

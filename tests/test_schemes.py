@@ -29,9 +29,11 @@ from PIL import Image
 import numpy as np
 
 from src.pvdm_rgb_batik import (
-    scheme1_embed, scheme1_extract,
-    scheme2_embed, scheme2_extract,
+    scheme1_embed, scheme1_extract, scheme1_capacity,
+    scheme2_embed, scheme2_extract, scheme2_capacity,
+    scheme3_embed, scheme3_extract, scheme3_capacity,
 )
+from src.evaluation_metrics import compute_psnr, compute_ssim, compute_ber
 from src.pvdm_core import RANGE_TABLE_RED
 
 # ---------------------------------------------------------------------------
@@ -266,3 +268,83 @@ class TestCrossMotif:
         assert recovered == payload, (
             f"Scheme 1 BER≠0 on {label}: ber={_ber(payload, recovered):.6f}"
         )
+
+    @pytest.mark.parametrize("motif_dir,label", [
+        (PARANG_DIR,       "Parang"),
+        (KAWUNG_DIR,       "Kawung"),
+        (MEGAMENDUNG_DIR,  "Megamendung"),
+    ])
+    def test_scheme3_ber_zero_cross_motif(self, motif_dir, label):
+        path  = _first_image(motif_dir)
+        cover = Image.open(path).convert("RGB")
+        stego, stats = scheme3_embed(cover, self.PAYLOAD)
+        recovered, _ = scheme3_extract(stego)
+        assert recovered == self.PAYLOAD, (
+            f"Scheme 3 BER≠0 on {label}: ber={_ber(self.PAYLOAD, recovered):.6f}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. Scheme 3 (Proposed Asymmetric HVS RGB PVDM) — BER=0%, PNG, HVS properties
+# ---------------------------------------------------------------------------
+
+class TestScheme3Proposed:
+    @pytest.fixture(scope="class")
+    def megamendung_img(self):
+        path = _first_image(MEGAMENDUNG_DIR)
+        return Image.open(path).convert("RGB")
+
+    def test_scheme3_smoke_and_overflow(self):
+        img = _synthetic_image(64, 64)
+        for payload in [b"", b"Hi", _make_payload(250)]:
+            stego, _ = scheme3_embed(img, payload)
+            recovered, _ = scheme3_extract(stego)
+            assert recovered == payload
+        with pytest.raises(ValueError, match="exceeds capacity"):
+            scheme3_embed(img, b"X" * 100_000)
+
+    @pytest.mark.parametrize("n_bytes", [10, 100, 1_000, 10_000, 50_000])
+    def test_scheme3_ber_zero_various_payloads(self, megamendung_img, n_bytes):
+        payload = _make_payload(n_bytes)
+        stego, stats = scheme3_embed(megamendung_img, payload)
+        assert stats["payload_bits"] <= stats["capacity_bits"]
+        recovered, _ = scheme3_extract(stego)
+        ber = compute_ber(payload, recovered)
+        assert ber["is_lossless"] and ber["ber"] == 0.0
+
+    def test_scheme3_png_save_reload(self, megamendung_img):
+        payload = _make_payload(2_000)
+        stego, _ = scheme3_embed(megamendung_img, payload)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            tmp_path = f.name
+        try:
+            stego.save(tmp_path, format="PNG")
+            reloaded = Image.open(tmp_path).convert("RGB")
+            recovered, _ = scheme3_extract(reloaded)
+            assert recovered == payload
+        finally:
+            os.unlink(tmp_path)
+
+    def test_scheme3_hvs_properties_on_batik(self, megamendung_img):
+        """
+        Verify key scientific claims of pvdmbase.md on smooth Batik (Megamendung):
+          1. Blue channel capacity > Red channel capacity > Green channel capacity
+          2. Total capacity of Scheme 3 > Scheme 1 (by large margin)
+          3. Green PSNR > Red PSNR > Blue PSNR (Green is protected by 7-level table)
+          4. SSIM > 0.99 at moderate payload (10 KB)
+        """
+        cap1 = scheme1_capacity(megamendung_img)
+        cap3 = scheme3_capacity(megamendung_img)
+        assert cap3["capacity_bits"] > cap1["capacity_bits"] * 3
+        assert cap3["per_channel_bits"]["B"] > cap3["per_channel_bits"]["R"]
+        assert cap3["per_channel_bits"]["R"] > cap3["per_channel_bits"]["G"]
+
+        payload = _make_payload(10_000)
+        stego, _ = scheme3_embed(megamendung_img, payload)
+        psnr = compute_psnr(megamendung_img, stego)
+        ssim = compute_ssim(megamendung_img, stego)
+
+        assert psnr["psnr_g"] > psnr["psnr_r"] > psnr["psnr_b"], (
+            f"Expected PSNR_G > PSNR_R > PSNR_B, got {psnr}"
+        )
+        assert ssim["ssim_rgb"] > 0.99, f"Expected SSIM > 0.99, got {ssim['ssim_rgb']}"

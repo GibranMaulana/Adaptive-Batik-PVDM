@@ -176,25 +176,20 @@ class TestTable2Replication:
     # t=3 since d=0 maps to [0,7] width=8
     T  = 3
 
-    # Ground truth from Wang et al. Table 2 (px=py=32, frem=0).
-    # NOTE: Wang et al. PDF Table 2 shows (30,29) for b=5 etc., but due to
-    # typesetting artefacts in the scanned paper the exact floor/ceil assignment
-    # for the "wrap-around" cases (b=5,6,7) is ambiguous. Our implementation
-    # chooses the complementary valid solution that also satisfies BER=0%.
-    # Both choices are mathematically equivalent (same modulus residue).
-    # The critical invariant — extraction round-trip BER=0% — is tested
-    # separately in test_table2_extraction_roundtrip (which passes for all b).
-    #
-    # Verified output of our engine (all BER_ok=True):
+    # Ground truth from Wang et al. (2008) Step 3 equations & pvdmbase.md Section 4.B
+    # Setup: px = py = 32, t = 3, frem = 0 <= b, px >= py:
+    #   Case 5 (m <= 4): (px + floor(m/2),  py + ceil(m/2))
+    #   Case 7 (m >  4): (px - ceil(m1/2),  py - floor(m1/2))
+    # Notice b=5,6,7 match Wang et al. Table 2 shifts (-2,-1), (-1,-1), (-1,0) exactly!
     TABLE2_EXPECTED = [
         (0, 32, 32),   # b=0: no shift (frem==b, m=0)
-        (1, 33, 32),   # b=1: case5, m=1, +ceil(0.5)=1 on px
+        (1, 32, 33),   # b=1: case5, m=1, +floor(0.5)=0 on px, +ceil(0.5)=1 on py
         (2, 33, 33),   # b=2: case5, m=2, +1 on each
-        (3, 34, 33),   # b=3: case5, m=3, +2 on px, +1 on py
+        (3, 33, 34),   # b=3: case5, m=3, +floor(1.5)=1 on px, +ceil(1.5)=2 on py
         (4, 34, 34),   # b=4: case5, m=4==half, +2 on each
-        (5, 31, 30),   # b=5: case7, m1=3, -ceil(1.5)=2 on px, -floor(1.5)=1 on py -> (31,30) [Paper: (30,29) — both valid]
-        (6, 31, 31),   # b=6: case7, m1=2, -1 on each           [Paper: (29,29) — both valid]
-        (7, 32, 31),   # b=7: case7, m1=1, -ceil(0.5)=1 on py   [Paper: (28,29) — both valid]
+        (5, 30, 31),   # b=5: case7, m1=3, -ceil(1.5)=2 on px, -floor(1.5)=1 on py -> (-2,-1) ✓
+        (6, 31, 31),   # b=6: case7, m1=2, -1 on each                              -> (-1,-1) ✓
+        (7, 31, 32),   # b=7: case7, m1=1, -ceil(0.5)=1 on px, -floor(0.5)=0 on py -> (-1, 0) ✓
     ]
 
     def test_table2_all_rows(self):
@@ -265,22 +260,18 @@ class TestTable3FOBP:
     PY = 0
     T  = 3
 
-    # Ground truth from Wang et al. Table 3.
-    # NOTE: For b=5,6,7 the FOBP correction maps pre-correction values through
-    # Case 1 (add 2^(t-1)=4 to both). Our pre-FOBP values differ from the paper
-    # (same ambiguity as Table 2 "wrap-around" cases), so the post-correction
-    # values also differ by the same offset. BER remains 0% (tested separately).
-    #
-    # Verified output of our engine (all BER_ok=True):
+    # Ground truth from Wang et al. Table 3 (px=py=0, t=3, frem=0).
+    # For b=5,6,7 pre-FOBP values are (-2,-1), (-1,-1), (-1,0); adding 2^(t-1)=4
+    # yields (2,3), (3,3), (3,4) — matching Wang et al. Table 3 verbatim!
     TABLE3_EXPECTED = [
         (0,  0,  0, False),
-        (1,  1,  0, False),
+        (1,  0,  1, False),
         (2,  1,  1, False),
-        (3,  2,  1, False),
+        (3,  1,  2, False),
         (4,  2,  2, False),
-        (5,  3,  2, True),   # Paper: (2,1) — both valid, BER=0% ✓
-        (6,  3,  3, True),   # Paper: (1,1) — both valid, BER=0% ✓
-        (7,  4,  3, True),   # Paper: (0,1) — both valid, BER=0% ✓
+        (5,  2,  3, True),   # pre (-2,-1) + 4 = (2,3), (2+3)%8 = 5 ✓
+        (6,  3,  3, True),   # pre (-1,-1) + 4 = (3,3), (3+3)%8 = 6 ✓
+        (7,  3,  4, True),   # pre (-1, 0) + 4 = (3,4), (3+4)%8 = 7 ✓
     ]
 
     def test_table3_all_rows(self):
@@ -416,3 +407,60 @@ class TestBitHelpers:
         packed   = pack_message(b"")
         unpacked = unpack_message(packed)
         assert unpacked == b""
+
+
+# ===========================================================================
+# 7. Explicit verification of all 8 optimal cases (pvdmbase.md Section 4.B)
+# ===========================================================================
+
+class TestAllEightCases:
+    """Verify each of the 8 optimal pixel-shifting formulas individually (t=3, power=8, half=4)."""
+
+    def test_case1_frem_gt_b_m_le_half_px_ge_py(self):
+        # px=55, py=50 -> sum=105, frem=1; b=0 -> m=1<=4 -> (-ceil(0.5), -floor(0.5)) = (-1, 0)
+        nx, ny, fobp = embed_pair(55, 50, b=0, t=3)
+        assert (nx, ny, fobp) == (54, 50, False)
+        assert extract_pair(nx, ny, 3) == 0
+
+    def test_case2_frem_gt_b_m_le_half_px_lt_py(self):
+        # px=50, py=55 -> sum=105, frem=1; b=0 -> m=1<=4 -> (-floor(0.5), -ceil(0.5)) = (0, -1)
+        nx, ny, fobp = embed_pair(50, 55, b=0, t=3)
+        assert (nx, ny, fobp) == (50, 54, False)
+        assert extract_pair(nx, ny, 3) == 0
+
+    def test_case3_frem_gt_b_m_gt_half_px_ge_py(self):
+        # px=57, py=50 -> sum=107, frem=3; wait need m>4 -> frem=7, b=0: px=55, py=56?
+        # px=56, py=55 -> sum=111, frem=7; b=0 -> m=7>4, m1=1 -> (+floor(0.5), +ceil(0.5)) = (0, +1)
+        nx, ny, fobp = embed_pair(56, 55, b=0, t=3)
+        assert (nx, ny, fobp) == (56, 56, False)
+        assert extract_pair(nx, ny, 3) == 0
+
+    def test_case4_frem_gt_b_m_gt_half_px_lt_py(self):
+        # px=55, py=56 -> sum=111, frem=7; b=0 -> m=7>4, m1=1 -> (+ceil(0.5), +floor(0.5)) = (+1, 0)
+        nx, ny, fobp = embed_pair(55, 56, b=0, t=3)
+        assert (nx, ny, fobp) == (56, 56, False)
+        assert extract_pair(nx, ny, 3) == 0
+
+    def test_case5_frem_le_b_m_le_half_px_ge_py(self):
+        # px=56, py=48 -> sum=104, frem=0; b=3 -> m=3<=4 -> (+floor(1.5), +ceil(1.5)) = (+1, +2)
+        nx, ny, fobp = embed_pair(56, 48, b=3, t=3)
+        assert (nx, ny, fobp) == (57, 50, False)
+        assert extract_pair(nx, ny, 3) == 3
+
+    def test_case6_frem_le_b_m_le_half_px_lt_py(self):
+        # px=48, py=56 -> sum=104, frem=0; b=3 -> m=3<=4 -> (+ceil(1.5), +floor(1.5)) = (+2, +1)
+        nx, ny, fobp = embed_pair(48, 56, b=3, t=3)
+        assert (nx, ny, fobp) == (50, 57, False)
+        assert extract_pair(nx, ny, 3) == 3
+
+    def test_case7_frem_le_b_m_gt_half_px_ge_py(self):
+        # px=56, py=48 -> sum=104, frem=0; b=5 -> m=5>4, m1=3 -> (-ceil(1.5), -floor(1.5)) = (-2, -1)
+        nx, ny, fobp = embed_pair(56, 48, b=5, t=3)
+        assert (nx, ny, fobp) == (54, 47, False)
+        assert extract_pair(nx, ny, 3) == 5
+
+    def test_case8_frem_le_b_m_gt_half_px_lt_py(self):
+        # px=48, py=56 -> sum=104, frem=0; b=5 -> m=5>4, m1=3 -> (-floor(1.5), -ceil(1.5)) = (-1, -2)
+        nx, ny, fobp = embed_pair(48, 56, b=5, t=3)
+        assert (nx, ny, fobp) == (47, 54, False)
+        assert extract_pair(nx, ny, 3) == 5
