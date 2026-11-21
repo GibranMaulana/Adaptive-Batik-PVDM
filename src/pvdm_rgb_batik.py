@@ -1,9 +1,9 @@
 """
 pvdm_rgb_batik.py
 =================
-Phase 1 — Baseline Steganographic Schemes for RGB Batik images.
+Baseline and HVS-asymmetric steganographic schemes for RGB Batik images.
 
-Implements two comparison schemes:
+Implements three comparison schemes:
 
 Scheme 1: Modified Pixel Indicator (Awate & Patil, 2016)
     Uses the 2 LSBs of the RED channel pixel as a *per-pixel indicator*
@@ -23,7 +23,12 @@ Scheme 2: Symmetric RGB PVDM (Wang et al. 6-level table, all channels)
     same standard 6-level range table from Wang et al. (2008).
     Horizontal pixel pairs: (col, col+1) for col in 0, 2, 4, ...
 
-Both schemes guarantee BER = 0% (bit-perfect extraction) on lossless
+Scheme 3: HVS-asymmetric RGB PVDM (proposed)
+    Uses all channels in R, G, B order with the standard Red table,
+    protective 7-level Green table, and expansive 5-level Blue table.
+    Message framing and horizontal pairing match Scheme 2.
+
+All schemes guarantee BER = 0% (bit-perfect extraction) on lossless
 PNG images by ensuring that pixel pair (px', py') after embedding always
 has its difference d' in the SAME sub-range as the original d.  When
 the optimal 8-case shift would cross a sub-range boundary, we fall back
@@ -36,6 +41,9 @@ Public API
     scheme1_extract(stego_img)        -> payload, stats
     scheme2_embed(cover_img, payload) -> stego_img, stats
     scheme2_extract(stego_img)        -> payload, stats
+    scheme3_embed(cover_img, payload) -> stego_img, stats
+    scheme3_extract(stego_img)        -> payload, stats
+    scheme3_capacity(cover_img)       -> capacity statistics
 
     cover_img / stego_img : PIL.Image (mode "RGB") or numpy ndarray H×W×3
     payload               : bytes  (raw secret; length header handled here)
@@ -52,6 +60,8 @@ from typing import Union
 from src.pvdm_core import (
     RANGE_TABLE_RED,
     RANGE_TABLE_GREEN_SYM,
+    RANGE_TABLE_GREEN_HVS,
+    RANGE_TABLE_BLUE_HVS,
     RANGE_TABLE_BLUE_SYM,
     RangeEntry,
     find_range,
@@ -325,7 +335,7 @@ def scheme1_extract(stego_img: ImageLike) -> tuple[bytes, dict]:
 
 
 # ---------------------------------------------------------------------------
-# SCHEME 2  — Symmetric RGB PVDM (Wang et al. 6-level, all 3 channels)
+# Shared RGB traversal for symmetric Scheme 2 and HVS Scheme 3
 # ---------------------------------------------------------------------------
 
 def _scheme2_capacity(cover: np.ndarray) -> int:
@@ -342,9 +352,12 @@ def _scheme2_capacity(cover: np.ndarray) -> int:
     return total
 
 
-def scheme2_embed(cover_img: ImageLike, payload: bytes) -> tuple[Image.Image, dict]:
+def _rgb_embed(
+    cover_img: ImageLike, payload: bytes,
+    tables: tuple[list[RangeEntry], ...], scheme: int,
+) -> tuple[Image.Image, dict]:
     """
-    Embed `payload` using Scheme 2: Wang et al. 6-level table on R, G, B.
+    Embed `payload` in R, G, B order using the supplied channel tables.
 
     Returns
     -------
@@ -360,10 +373,11 @@ def scheme2_embed(cover_img: ImageLike, payload: bytes) -> tuple[Image.Image, di
     n_bits     = len(bit_stream)
     padded     = bit_stream + [0] * 16
 
-    capacity = _scheme2_capacity(cover)
+    capacity_by_channel = _rgb_capacity(cover, tables)
+    capacity = sum(capacity_by_channel.values())
     if n_bits > capacity:
         raise ValueError(
-            f"Scheme 2: payload+header ({n_bits} bits) exceeds capacity "
+            f"Scheme {scheme}: payload+header ({n_bits} bits) exceeds capacity "
             f"({capacity} bits). Max payload ≈ {(capacity // 8) - 4} bytes."
         )
 
@@ -379,7 +393,7 @@ def scheme2_embed(cover_img: ImageLike, payload: bytes) -> tuple[Image.Image, di
             for ch in range(3):
                 p0 = int(cover[row, col,     ch])
                 p1 = int(cover[row, col + 1, ch])
-                entry = find_range(abs(p0 - p1), RANGE_TABLE_RED)
+                entry = find_range(abs(p0 - p1), tables[ch])
 
                 b_full = 0
                 for k in range(entry.bits):
@@ -401,6 +415,8 @@ def scheme2_embed(cover_img: ImageLike, payload: bytes) -> tuple[Image.Image, di
 
     stats = {
         "capacity_bits" : capacity,
+        "capacity_bits_by_channel": capacity_by_channel,
+        "max_payload_bytes": max(0, capacity // 8 - 4),
         "payload_bits"  : n_bits,
         "fobp_count"    : fobp_count,
         "used_pairs"    : used_pairs,
@@ -408,9 +424,11 @@ def scheme2_embed(cover_img: ImageLike, payload: bytes) -> tuple[Image.Image, di
     return _to_pil(stego), stats
 
 
-def scheme2_extract(stego_img: ImageLike) -> tuple[bytes, dict]:
+def _rgb_extract(
+    stego_img: ImageLike, tables: tuple[list[RangeEntry], ...],
+) -> tuple[bytes, dict]:
     """
-    Extract payload from Scheme-2 stego image.
+    Extract a framed RGB payload using the supplied channel tables.
 
     Returns
     -------
@@ -429,7 +447,7 @@ def scheme2_extract(stego_img: ImageLike) -> tuple[bytes, dict]:
             for ch in range(3):
                 p0 = int(stego[row, col,     ch])
                 p1 = int(stego[row, col + 1, ch])
-                entry = find_range(abs(p0 - p1), RANGE_TABLE_RED)
+                entry = find_range(abs(p0 - p1), tables[ch])
                 b_val = extract_pair(p0, p1, entry.bits)
                 for shift in range(entry.bits - 1, -1, -1):
                     bits.append((b_val >> shift) & 1)
@@ -447,3 +465,62 @@ def scheme2_extract(stego_img: ImageLike) -> tuple[bytes, dict]:
     raw     = bits_to_bytes(bits[: len(bits) - len(bits) % 8])
     payload = unpack_message(raw)
     return payload, {"extracted_bits": len(bits)}
+
+
+_SYMMETRIC_TABLES = (RANGE_TABLE_RED, RANGE_TABLE_GREEN_SYM, RANGE_TABLE_BLUE_SYM)
+_HVS_TABLES = (RANGE_TABLE_RED, RANGE_TABLE_GREEN_HVS, RANGE_TABLE_BLUE_HVS)
+
+
+def _rgb_capacity(
+    cover: np.ndarray, tables: tuple[list[RangeEntry], ...],
+) -> dict[str, int]:
+    """Gross capacity per channel; an unpaired final column is unused."""
+    pair_width = cover.shape[1] // 2 * 2
+    diffs = np.abs(cover[:, :pair_width:2].astype(np.int16)
+                   - cover[:, 1:pair_width:2].astype(np.int16))
+    result = {}
+    for ch, name in enumerate(("R", "G", "B")):
+        lookup = np.empty(256, dtype=np.uint8)
+        for entry in tables[ch]:
+            lookup[entry.low:entry.high + 1] = entry.bits
+        result[name] = int(lookup[diffs[:, :, ch]].sum())
+    return result
+
+
+def scheme2_embed(cover_img: ImageLike, payload: bytes) -> tuple[Image.Image, dict]:
+    """Embed with the standard 6-level table on each RGB channel."""
+    return _rgb_embed(cover_img, payload, _SYMMETRIC_TABLES, 2)
+
+
+def scheme2_extract(stego_img: ImageLike) -> tuple[bytes, dict]:
+    """Blindly extract a Scheme 2 message, including its length header."""
+    return _rgb_extract(stego_img, _SYMMETRIC_TABLES)
+
+
+def scheme3_capacity(cover_img: ImageLike) -> dict:
+    """Return gross bit capacity and usable bytes after the 32-bit header.
+
+    Final partial codewords are zero-padded; padding is excluded from the
+    extracted message. Capacity includes every horizontal pair in all RGB
+    channels, without indicator bits or skipped indicator states.
+    """
+    by_channel = _rgb_capacity(_to_array(cover_img), _HVS_TABLES)
+    total = sum(by_channel.values())
+    return {"capacity_bits": total, "capacity_bits_by_channel": by_channel,
+            "max_payload_bytes": max(0, total // 8 - 4)}
+
+
+def scheme3_embed(cover_img: ImageLike, payload: bytes) -> tuple[Image.Image, dict]:
+    """Embed using HVS tables: Red 6 levels, Green 7, Blue 5.
+
+    Reuses the Phase 1 PVDM engine and range-preserving correction. Input
+    images are copied. Output must be saved losslessly (for example PNG).
+    Statistics include gross capacity, header-inclusive payload bits,
+    capacity per channel, used spatial pairs, and FOBP correction count.
+    """
+    return _rgb_embed(cover_img, payload, _HVS_TABLES, 3)
+
+
+def scheme3_extract(stego_img: ImageLike) -> tuple[bytes, dict]:
+    """Extract Scheme 3 using only the stego image and fixed HVS tables."""
+    return _rgb_extract(stego_img, _HVS_TABLES)
