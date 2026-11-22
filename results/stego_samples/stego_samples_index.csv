@@ -1,0 +1,31 @@
+Motif,Cover_Image,Scheme,Payload_Tier,Payload_Bytes,Stego_File,PSNR_R,PSNR_G,PSNR_B,PSNR_RGB,SSIM_RGB,SSIM_Y,BER_%,FOBP_Count
+Parang,parang_01.png,scheme1,10 KB,10240,parang_01_scheme1_10kb.png,inf,51.7576,52.0026,53.6393,0.999401,0.999666,0.0,434
+Parang,parang_01.png,scheme1,Full,26146,parang_01_scheme1_full.png,inf,47.5241,47.8316,49.436,0.9985,0.999163,0.0,1089
+Parang,parang_01.png,scheme2,10 KB,10240,parang_01_scheme2_10kb.png,53.4193,52.7225,53.2509,53.1206,0.999584,0.999797,0.0,429
+Parang,parang_01.png,scheme2,50 KB,51200,parang_01_scheme2_50kb.png,46.5091,46.3182,46.5529,46.4589,0.997226,0.998632,0.0,2077
+Parang,parang_01.png,scheme2,100 KB,102400,parang_01_scheme2_100kb.png,43.7341,43.5116,43.7274,43.6565,0.994254,0.99717,0.0,4170
+Parang,parang_01.png,scheme2,Full,159337,parang_01_scheme2_full.png,41.6845,41.4711,41.695,41.6156,0.991378,0.995747,0.0,6502
+Parang,parang_01.png,scheme3,10 KB,10240,parang_01_scheme3_10kb.png,53.0349,53.5269,50.9381,52.3487,0.999407,0.999872,0.0,331
+Parang,parang_01.png,scheme3,50 KB,51200,parang_01_scheme3_50kb.png,46.5216,47.22,44.0148,45.6908,0.995955,0.99914,0.0,1806
+Parang,parang_01.png,scheme3,100 KB,102400,parang_01_scheme3_100kb.png,43.7761,44.478,41.1187,42.8715,0.991688,0.998239,0.0,3573
+Parang,parang_01.png,scheme3,Full,161356,parang_01_scheme3_full.png,41.6535,42.3219,39.0934,40.7894,0.987343,0.997323,0.0,5664
+Kawung,kawung_01.png,scheme1,10 KB,10240,kawung_01_scheme1_10kb.png,inf,50.0542,50.2381,51.9061,0.99976,0.999873,0.0,361
+Kawung,kawung_01.png,scheme1,Full,29282,kawung_01_scheme1_full.png,inf,45.4782,45.6394,47.319,0.999307,0.99964,0.0,1068
+Kawung,kawung_01.png,scheme2,10 KB,10240,kawung_01_scheme2_10kb.png,51.8441,51.83,51.7641,51.8126,0.999814,0.999916,0.0,238
+Kawung,kawung_01.png,scheme2,50 KB,51200,kawung_01_scheme2_50kb.png,44.8744,44.8157,44.9166,44.8687,0.998818,0.999457,0.0,1294
+Kawung,kawung_01.png,scheme2,100 KB,102400,kawung_01_scheme2_100kb.png,41.8174,41.7739,41.8302,41.8071,0.997625,0.998914,0.0,2562
+Kawung,kawung_01.png,scheme2,Full,176207,kawung_01_scheme2_full.png,39.4696,39.4113,39.4913,39.4573,0.995893,0.998137,0.0,4631
+Kawung,kawung_01.png,scheme3,10 KB,10240,kawung_01_scheme3_10kb.png,51.8176,51.929,50.4292,51.3366,0.999774,0.999924,0.0,285
+Kawung,kawung_01.png,scheme3,50 KB,51200,kawung_01_scheme3_50kb.png,44.9341,45.0809,43.4584,44.4272,0.998528,0.999539,0.0,1524
+Kawung,kawung_01.png,scheme3,100 KB,102400,kawung_01_scheme3_100kb.png,41.896,42.0427,40.398,41.3798,0.99702,0.999068,0.0,3110
+Kawung,kawung_01.png,scheme3,Full,180285,kawung_01_scheme3_full.png,39.4613,39.5656,37.9265,38.9175,0.994696,0.998353,0.0,5821
+Megamendung,megamendung_01.png,scheme1,10 KB,10240,megamendung_01_scheme1_10kb.png,inf,52.2464,53.5318,54.6026,0.999359,0.999703,0.0,193
+Megamendung,megamendung_01.png,scheme1,Full,21156,megamendung_01_scheme1_full.png,inf,48.7956,50.1632,51.1867,0.998647,0.999409,0.0,448
+Megamendung,megamendung_01.png,scheme2,10 KB,10240,megamendung_01_scheme2_10kb.png,52.0208,53.81,55.5944,53.5667,0.999357,0.999689,0.0,937
+Megamendung,megamendung_01.png,scheme2,50 KB,51200,megamendung_01_scheme2_50kb.png,44.7432,46.5855,48.2492,46.2915,0.996099,0.998133,0.0,9833
+Megamendung,megamendung_01.png,scheme2,100 KB,102400,megamendung_01_scheme2_100kb.png,41.9693,43.7213,45.2469,43.4401,0.992084,0.996234,0.0,19386
+Megamendung,megamendung_01.png,scheme2,Full,153119,megamendung_01_scheme2_full.png,40.1901,41.9705,43.4765,41.6717,0.98848,0.994522,0.0,26144
+Megamendung,megamendung_01.png,scheme3,10 KB,10240,megamendung_01_scheme3_10kb.png,52.1111,55.3064,51.1884,52.5432,0.998988,0.999811,0.0,890
+Megamendung,megamendung_01.png,scheme3,50 KB,51200,megamendung_01_scheme3_50kb.png,44.7923,48.3321,43.5047,45.111,0.993833,0.998865,0.0,9643
+Megamendung,megamendung_01.png,scheme3,100 KB,102400,megamendung_01_scheme3_100kb.png,41.9225,45.2776,40.5659,42.1782,0.987511,0.997689,0.0,19034
+Megamendung,megamendung_01.png,scheme3,Full,154724,megamendung_01_scheme3_full.png,40.0929,43.3118,38.8907,40.3995,0.981641,0.996597,0.0,26182
