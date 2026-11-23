@@ -1,14 +1,15 @@
 # BLUEPRINT FINAL KEY POINTS & DAFTAR ASET JURNAL IEEE (ITSMART)
 **Judul (EN):** Asymmetric Range Table Quantization Based on Human Visual System for RGB Image Steganography Using Pixel-Value Differencing and Modulus Function on Indonesian Batik Images  
 **Judul (ID):** Steganografi Citra Batik Nusantara Menggunakan Metode Pixel-Value Differencing dan Fungsi Modulus (PVDM) dengan Tabel Rentang Kuantisasi Asimetris Berbasis Human Visual System pada Ruang Warna RGB  
-**Ruang Lingkup:** Pengolahan Citra Digital (*Pure Digital Image Processing*) — tanpa tambahan kriptografi eksternal (XOR).
+**Ruang Lingkup:** Pengolahan Citra Digital (*Pure Digital Image Processing*) — tanpa tambahan kriptografi eksternal (XOR).  
+**Strategi Evaluasi:** Eksperimen Terkontrol *Batik vs. Batik* (re-implementasi metode pembanding pada 45 citra Batik Nusantara yang identik untuk komparasi *apple-to-apple*).
 
 ---
 
 ## ABSTRACT & KEYWORDS
 * **Key Points:**
   * **Masalah (*Gap*):** Keterbatasan kapasitas PVDM *grayscale* klasik serta inefisiensi pemanfaatan kanal dan perlakuan tabel rentang seragam pada perluasan PVDM RGB berbasis *Pixel Indicator*.
-  * **Metode Usulan:** Skema PVDM RGB penuh (3 kanal aktif simultan) dengan **tabel rentang kuantisasi asimetris berbasis *Human Visual System* (HVS)** — Green 7-level (protektif), Red 6-level (standar), dan Blue 5-level (ekspansif) — yang diuji pada **45 citra Batik Nusantara** ($512 \times 512$, 24-bit PNG).
+  * **Metode Usulan:** Skema PVDM RGB penuh (3 kanal aktif simultan) dengan **tabel rentang kuantisasi asimetris berbasis *Human Visual System* (HVS)** — Green 7-level (protektif), Red 6-level (standar), dan Blue 5-level (ekspansif) — yang dibandingkan secara langsung (*head-to-head*) terhadap re-implementasi *Modified Pixel Indicator* (Awate & Patil, 2016) dan PVDM RGB Simetris pada **45 citra Batik Nusantara** ($512 \times 512$, 24-bit PNG).
   * **Hasil Kuantitatif Utama:**
     * Peningkatan kapasitas **+519,29%–566,33%** dibanding *Modified Pixel Indicator* (Awate & Patil, 2016) dan **+1,34%–2,09%** dibanding PVDM RGB Simetris (**162,2–171,5 KB** atau **4,95–5,23 bpp**).
     * Validasi HVS: $\text{PSNR}_G$ selalu tertinggi di seluruh motif & payload (**40,43–53,09 dB**), $\text{SSIM}_Y$ unggul (**0,9969–0,9981**), dan $\text{SSIM}_{\text{RGB}} > 0{,}99$ hingga 100 KB.
@@ -24,13 +25,13 @@
   * **Identifikasi *Research Gap*:**
     * *Wang et al. (2008):* PVDM efektif meminimalkan distorsi lewat fungsi modulus, namun masih terbatas pada citra *grayscale* (1 kanal).
     * *Awate & Patil (2016):* Perluasan RGB berbasis *Modified Pixel Indicator* (2 LSB kanal Red) membuang **>83% potensi kapasitas** (50% piksel dilewati saat LSB Red `00`/`11`, hanya 1 kanal aktif per piksel) dan tetap memakai tabel 6-level seragam tanpa mempertimbangkan sensitivitas HVS.
-  * **Solusi Usulan:** Mengaktifkan ketiga kanal RGB secara simultan dengan **tabel rentang asimetris berbasis HVS** (Green protektif, Red standar, Blue ekspansif).
+  * **Solusi Usulan & Strategi Komparasi:** Mengaktifkan ketiga kanal RGB secara simultan dengan **tabel rentang asimetris berbasis HVS** (Green protektif, Red standar, Blue ekspansif). Untuk menjamin validitas perbandingan yang adil (*apple-to-apple*), metode *Awate & Patil (2016)* dan *PVDM RGB Simetris* direplikasi langsung dan diuji pada dataset Batik Nusantara yang sama persis sebagai variabel kontrol.
   * **Justifikasi Dataset Batik Nusantara (4 Pilar):**
     1. *Dualitas Frekuensi Spasial:* Memadukan area latar halus (*Megamendung*) dan ornamen geometris rapat berfrekuensi tinggi (*Parang, Kawung / isen-isen*) dalam satu kanvas.
     2. *Stress-Test Alami FOBP:* Kontras tajam antara garis motif putih/lilin malam dan warna dasar gelap/sogan memicu kasus *Falling-Off-Boundary Problem* secara intensif.
     3. *Ketimpangan Distribusi Warna (Chroma Skewness):* Pewarnaan Batik klasik/sogan didominasi pigmen cokelat dan gelap dengan intensitas kanal **Blue sangat rendah (mendekati 0)**, menjadikannya medan uji paling valid bagi stabilitas tabel ekspansif kanal Blue.
     4. *Relevansi Domain:* Mendukung penyisipan metadata kepemilikan/hak cipta warisan budaya Batik tanpa merusak estetika motif.
-  * **Kontribusi Utama:** Poin-poin ringkas kontribusi penelitian.
+  * **Kontribusi Utama:** Poin-poin ringkas kontribusi penelitian (formulasi tabel asimetris HVS, evaluasi terkontrol *Batik vs. Batik* terhadap 2 *baseline*, serta analisis korelasi tekstur & FOBP).
 * **Aset yang Dicantumkan:** Tidak wajib ada tabel/gambar (narasi + sitasi `[1]`, `[2]`).
 
 ---
@@ -62,9 +63,9 @@
     * *Step 3 (8 Kasus Optimal):* Jelaskan **alasan matematis pembulatan bersilang $\lceil m/2 \rceil$ dan $\lfloor m/2 \rfloor$** berdasarkan urutan $P_{(i,x)} \ge P_{(i,y)}$ — menjaga agar selisih baru $d' = |P'_{(i,x)} - P'_{(i,y)}|$ tetap rapat dan tidak melompat keluar dari sub-rentang $R_j$ aslinya.
     * *Step 4 (3 Kasus FOBP + Sub-range Guard):* Koreksi *underflow* ($<0$), *overflow* ($>255$), kontras ekstrem ($d_i > 128$), serta mekanisme *Sub-range Guard* (`_safe_embed`) agar $|P''_x - P''_y|$ tetap di dalam $[l_j, u_j]$ (menjamin ekstraksi 100% *lossless*).
   * **D. Algoritma *Extraction*:** Ekstraksi buta dari pasangan piksel stego $(P^*_x, P^*_y)$ dan pembacaan header 32-bit.
-  * **E. Skenario Eksperimen & Metrik:**
-    * *Dataset:* **45 citra Batik Nusantara** ($512 \times 512$, 24-bit PNG): 15 Parang, 15 Kawung, 15 Megamendung (menekankan keragaman tekstur, kontras batas FOBP, dan *chroma skewness* sogan).
-    * *Skenario:* 3 Skema (**Skema 1:** *Awate & Patil 2016*, **Skema 2:** *Symmetric 6-level*, **Skema 3:** *Proposed Asymmetric HVS*) $\times$ 4 Payload (`10 KB`, `50 KB`, `100 KB`, `Full`).
+  * **E. Desain Eksperimen Terkontrol (*Batik vs. Batik*) & Metrik Evaluasi:**
+    * *Dataset (Variabel Kontrol):* **45 citra Batik Nusantara** ($512 \times 512$, 24-bit RGB lossless PNG): 15 Parang, 15 Kawung, 15 Megamendung (mewakili dualitas tekstur, kontras batas FOBP, dan *chroma skewness* sogan).
+    * *Skema Pembanding (Re-implementasi Identik):* **Skema 1** (*Awate & Patil 2016* — direplikasi ulang), **Skema 2** (*Symmetric 6-level PVDM*), dan **Skema 3** (*Proposed Asymmetric HVS PVDM*). Ketiganya diuji pada lingkungan, *header* 32-bit, 4 variasi *payload* (`10 KB`, `50 KB`, `100 KB`, `Full`), dan metrik yang identik untuk mencegah bias perbandingan lintas studi.
 * **Aset yang Perlu Dicantumkan:**
   * **[Gambar 1 — Diagram Baru]** *Flowchart* Arsitektur Sistem (*Embedding* & *Extraction*).
   * **[Gambar 2 — Opsional/Disarankan]** Sampel Dataset Batik Nusantara (`parang_01.png`, `kawung_01.png`, `megamendung_01.png`).
@@ -76,11 +77,11 @@
 
 ## IV. EXPERIMENTAL RESULTS AND DISCUSSION
 ### A. Verifikasi Implementasi & Uji *Lossless*
-* **Key Points:** Validasi **89 *unit & integration tests* (89 passed, 0 failed)** termasuk replikasi Tabel 2 & 3 Wang et al. (2008), serta konfirmasi **$\text{BER} = 0{,}0\%$** pada seluruh 45 citra, 3 skema, dan semua variasi payload.
+* **Key Points:** Validasi **89 *unit & integration tests* (89 passed, 0 failed)** termasuk replikasi presisi Tabel 2 & 3 Wang et al. (2008) untuk menjamin akurasi re-implementasi algoritma, serta konfirmasi **$\text{BER} = 0{,}0\%$** pada seluruh 45 citra, 3 skema, dan semua variasi payload.
 * **Aset:** *(Opsional untuk laporan lengkap)* Tabel ringkasan grup *unit test* (`resultsfinal.md` Bagian 3.5).
 
-### B. Analisis Kapasitas Maksimum per Kanal
-* **Key Points:** Skema 3 mencapai rata-rata **168,2 KB (5,13 bpp)** pada Parang, **171,5 KB (5,23 bpp)** pada Kawung, dan **162,2 KB (4,95 bpp)** pada Megamendung — unggul **+519,29%–566,33%** vs Skema 1 dan **+1,34%–2,09%** vs Skema 2; distribusi asimetris terbukti (Blue ~67–68 KB terbesar, Red ~54–56 KB, Green ~41–48 KB terproteksi); Skema 1 gagal pada payload 50 KB & 100 KB (*Exceeds Capacity*).
+### B. Analisis Kapasitas Maksimum per Kanal (*Batik vs. Batik*)
+* **Key Points:** Skema 3 mencapai rata-rata **168,2 KB (5,13 bpp)** pada Parang, **171,5 KB (5,23 bpp)** pada Kawung, dan **162,2 KB (4,95 bpp)** pada Megamendung — unggul **+519,29%–566,33%** vs re-implementasi Skema 1 (*Awate & Patil 2016*) dan **+1,34%–2,09%** vs Skema 2 (*Symmetric*); distribusi asimetris terbukti (Blue ~67–68 KB terbesar, Red ~54–56 KB, Green ~41–48 KB terproteksi); Skema 1 gagal pada payload 50 KB & 100 KB (*Exceeds Capacity*).
 * **Aset yang Perlu Dicantumkan:**
   * **[Tabel IV]** Tabel 1 Kapasitas Maksimum per Kanal (`results/tables/table1_capacity_summary.csv`).
   * **[Gambar 3]** `results/figures/fig1_capacity_comparison.png`.
@@ -109,7 +110,7 @@
 
 ## V. CONCLUSION (KESIMPULAN)
 * **Key Points:**
-  * Rangkuman kuantitatif 4 temuan utama: peningkatan kapasitas (+519%–566% vs S1, +1,34%–2,09% vs S2), efektivitas proteksi Green ($\text{PSNR}_G$ tertinggi & $\text{SSIM}_Y$ unggul), imperseptibilitas & *lossless* ($\text{SSIM}_{\text{RGB}} > 0{,}99$ hingga 100 KB, $\text{BER}=0{,}0\%$), serta korelasi tekstur Batik ($r=0{,}9574$) & ketahanan FOBP.
+  * Rangkuman kuantitatif 4 temuan utama dari evaluasi terkontrol *Batik vs. Batik*: peningkatan kapasitas (+519%–566% vs S1, +1,34%–2,09% vs S2), efektivitas proteksi Green ($\text{PSNR}_G$ tertinggi & $\text{SSIM}_Y$ unggul), imperseptibilitas & *lossless* ($\text{SSIM}_{\text{RGB}} > 0{,}99$ hingga 100 KB, $\text{BER}=0{,}0\%$), serta korelasi tekstur Batik ($r=0{,}9574$) & ketahanan FOBP.
   * *Future Work:* Uji ketahanan terhadap kompresi *lossy* (JPEG) atau steganalisis statistik (*RS analysis* / *PDH analysis*).
 * **Aset yang Dicantumkan:** Tidak ada tabel/gambar baru.
 
@@ -120,5 +121,7 @@
 * **Appendix (Hanya untuk Laporan Tugas Akhir):** Tabel lengkap 45 citra Batik per gambar (Bagian 4 `resultsfinal.md`) dan ringkasan `FOBPMotifCounter` (Bagian 3.4 `resultsfinal.md`).
 * **Catatan Sidang / Presentasi (Tidak perlu di teks jurnal):**
   * *Sanggahan Lampu Rem Merah vs. Hijau:* Bedakan fisika atmosfer jarak jauh (*Rayleigh Scattering* pada panjang gelombang merah) dengan resolusi spasial & sensitivitas luminansi layar digital jarak dekat (HVS).
-  * *Komparasi Dataset Standar (Lena, Baboon, dll.):* Jika dosen penguji meminta *benchmark* langsung pada citra standar, skrip yang sama (`run_experiments.py`) bersifat *dataset-agnostic* dan dapat langsung dijalankan pada folder citra standar tanpa mengubah kode.
+  * *Sanggahan Dataset Standar (Lena/Baboon) vs. Batik:* Jelaskan bahwa penelitian ini tidak sekadar menyalin angka dari tabel paper *Awate & Patil (2016)*, melainkan **mereplikasi langsung rumus algoritma mereka (Skema 1)** dan mengujinya pada **45 citra Batik yang sama persis** dengan metode usulan (Skema 3). Dengan menjadikan Batik sebagai variabel kontrol (*Batik vs. Batik*), komparasi jauh lebih adil (*apple-to-apple*) dengan *payload*, *header* 32-bit, dan rumus metrik yang identik.
 ```[cite: 1, 2]
+
+Blueprint ini sudah 100% sinkron dengan seluruh data di `resultsfinal.md` tanpa ada lagi ketergantungan pada dataset standar[cite: 2]. Mau langsung mulai menyusun draf naskah (format LaTeX/Overleaf atau teks biasa) mulai dari **Bab I** sekarang?
