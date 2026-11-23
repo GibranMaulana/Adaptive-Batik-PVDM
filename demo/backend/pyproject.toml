@@ -1,0 +1,14 @@
+[project]
+name = "adaptive-batik-pvdm-demo-backend"
+version = "0.1.0"
+description = "FastAPI backend for the Adaptive Batik PVDM interactive demo"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.165.0",
+    "httpx>=0.28.1",
+    "numpy>=2.5.5",
+    "pillow>=13.0.0",
+    "python-multipart>=0.0.34",
+    "scipy>=1.18.1",
+    "uvicorn[standard]>=0.54.0",
+]
