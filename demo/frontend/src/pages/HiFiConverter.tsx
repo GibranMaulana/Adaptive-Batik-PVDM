@@ -4,25 +4,21 @@ import gsap from 'gsap';
 import {
   ArrowLeft,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
   Eye,
-  Grid2x2,
   Layers,
   Loader2,
   RefreshCw,
-  RotateCcw,
   Sparkles,
 } from 'lucide-react';
 import { embedPayload, fetchHealth, fetchSamples } from '../api/client';
-import type { EmbedResponse, HealthResponse, SampleSummary, SchemeName } from '../api/types';
+import type { EmbedResponse, HealthResponse, SampleSummary } from '../api/types';
 import { HiFiExtractor, type HiFiPreloadExtract } from '../components/hifi/HiFiExtractor';
 import { SchemeResultCard, type GalleryViewMode } from '../components/hifi/SchemeResultCard';
-import { SpecimenModal } from '../components/hifi/SpecimenModal';
 import {
-  ALL_SCHEMES,
   SAMPLE_MESSAGE,
-  SCHEME_META,
   formatBytes,
-  formatKb,
   generateDeterministicPayload,
   utf8ByteLength,
 } from '../utils/payload';
@@ -36,13 +32,31 @@ interface HiFiConverterProps {
   onNavigate: (path: string) => void;
 }
 
-const FEATURED_FILENAMES = new Set(['parang_01.png', 'kawung_01.png', 'megamendung_01.png']);
+const FEATURED_ORDER = ['parang_01.png', 'kawung_01.png', 'megamendung_01.png'] as const;
 
 const PAYLOAD_PRESETS: { label: string; bytes: number }[] = [
   { label: '1 KB', bytes: 1024 },
   { label: '10 KB', bytes: 10 * 1024 },
   { label: '50 KB', bytes: 50 * 1024 },
 ];
+
+function sampleKey(sample: Pick<SampleSummary, 'motif' | 'filename'>): string {
+  return `${sample.motif}/${sample.filename}`;
+}
+
+function orderSamplesFeaturedFirst(samples: SampleSummary[]): SampleSummary[] {
+  const featured: SampleSummary[] = [];
+  for (const filename of FEATURED_ORDER) {
+    const match = samples.find((s) => s.filename === filename);
+    if (match) {
+      featured.push(match);
+    }
+  }
+
+  const featuredKeys = new Set(featured.map((s) => sampleKey(s)));
+  const rest = samples.filter((s) => !featuredKeys.has(sampleKey(s)));
+  return [...featured, ...rest];
+}
 
 function pickDefaultSample(samples: SampleSummary[]): SampleSummary | null {
   if (samples.length === 0) return null;
@@ -53,12 +67,15 @@ function pickDefaultSample(samples: SampleSummary[]): SampleSummary | null {
   );
 }
 
-function isFeaturedSample(sample: SampleSummary): boolean {
-  return sample.featured || FEATURED_FILENAMES.has(sample.filename);
-}
-
 export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const sliderRef = useRef<HTMLDivElement | null>(null);
+  const thumbRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const heroFrameRef = useRef<HTMLDivElement | null>(null);
+  const heroImgRef = useRef<HTMLImageElement | null>(null);
+  const splitCoverFrameRef = useRef<HTMLElement | null>(null);
+  const heroRectRef = useRef<DOMRect | null>(null);
+  const returnRectRef = useRef<DOMRect | null>(null);
   const extractCounterRef = useRef(0);
 
   const [activeMode, setActiveMode] = useState<ActiveMode>('embed');
@@ -71,7 +88,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const [samplesLoading, setSamplesLoading] = useState(true);
   const [samplesError, setSamplesError] = useState<string | null>(null);
   const [selectedSample, setSelectedSample] = useState<SampleSummary | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
 
   const [message, setMessage] = useState<string>(SAMPLE_MESSAGE);
   const [isEmbedding, setIsEmbedding] = useState(false);
@@ -93,16 +109,17 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
     try {
       const catalog = await fetchSamples();
-      setSamples(catalog.samples);
+      const ordered = orderSamplesFeaturedFirst(catalog.samples);
+      setSamples(ordered);
       setSamplesError(null);
       setSelectedSample((current) => {
         if (current) {
-          const match = catalog.samples.find(
+          const match = ordered.find(
             (s) => s.motif === current.motif && s.filename === current.filename,
           );
           if (match) return match;
         }
-        return pickDefaultSample(catalog.samples);
+        return pickDefaultSample(ordered);
       });
     } catch (err) {
       setSamplesError(err instanceof Error ? err.message : 'Unable to reach /api/samples.');
@@ -127,9 +144,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     fetchSamples()
       .then((catalog) => {
         if (!active) return;
-        setSamples(catalog.samples);
+        const ordered = orderSamplesFeaturedFirst(catalog.samples);
+        setSamples(ordered);
         setSamplesError(null);
-        setSelectedSample((current) => current ?? pickDefaultSample(catalog.samples));
+        setSelectedSample((current) => current ?? pickDefaultSample(ordered));
       })
       .catch((err) => {
         if (!active) return;
@@ -146,59 +164,165 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     };
   }, []);
 
-  const featuredSamples = useMemo(
-    () => samples.filter((s) => isFeaturedSample(s)).slice(0, 3),
-    [samples],
+  const orderedSamples = useMemo(() => orderSamplesFeaturedFirst(samples), [samples]);
+  const selectedSampleKey = selectedSample ? sampleKey(selectedSample) : '';
+
+  const payloadBytes = utf8ByteLength(message);
+  const s1Max = selectedSample?.capacities.scheme1.max_payload_bytes ?? null;
+  const s1Overflow = s1Max !== null && payloadBytes > s1Max;
+
+  useEffect(() => {
+    if (!selectedSampleKey || activeMode !== 'embed' || embedStage !== 'compose') return;
+    const activeThumb = thumbRefs.current.get(selectedSampleKey);
+    activeThumb?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    });
+  }, [selectedSampleKey, activeMode, embedStage]);
+
+  // Hero image swap animation whenever selectedSample changes
+  useGSAP(
+    () => {
+      if (activeMode !== 'embed' || embedStage !== 'compose' || !selectedSampleKey) return;
+      const heroImg = heroImgRef.current;
+      if (!heroImg) return;
+
+      const mm = gsap.matchMedia();
+      mm.add(
+        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        (context) => {
+          if (context.conditions?.reduceMotion) return;
+
+          gsap.fromTo(
+            heroImg,
+            { opacity: 0.25, scale: 0.94, y: 8 },
+            {
+              opacity: 1,
+              scale: 1,
+              y: 0,
+              duration: 0.45,
+              ease: 'power3.out',
+              clearProps: 'transform,opacity',
+            },
+          );
+        },
+        stageRef,
+      );
+
+      return () => mm.revert();
+    },
+    { scope: stageRef, dependencies: [selectedSampleKey] },
   );
 
-  const isSelectedFeatured = selectedSample ? isFeaturedSample(selectedSample) : false;
-  const payloadBytes = utf8ByteLength(message);
-
-  const schemeReadiness = useMemo(() => {
-    return ALL_SCHEMES.map((scheme: SchemeName) => {
-      const maxBytes = selectedSample?.capacities[scheme].max_payload_bytes ?? null;
-      const overflow = maxBytes !== null && payloadBytes > maxBytes;
-      return { scheme, maxBytes, overflow };
-    });
-  }, [selectedSample, payloadBytes]);
-
-  const scheme1Overflow = schemeReadiness[0]?.overflow ?? false;
-  const scheme1Max = schemeReadiness[0]?.maxBytes ?? null;
-
+  // Stage transition animations (compose <-> split <-> extract)
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
       mm.add(
-        {
-          reduceMotion: '(prefers-reduced-motion: reduce)',
-        },
+        { reduceMotion: '(prefers-reduced-motion: reduce)' },
         (context) => {
           const reduceMotion = Boolean(context.conditions?.reduceMotion);
-          if (reduceMotion) return;
+          if (reduceMotion) {
+            heroRectRef.current = null;
+            returnRectRef.current = null;
+            return;
+          }
 
           if (activeMode === 'embed' && embedStage === 'compose') {
-            gsap.from('.compose-folio', {
-              y: 18,
+            const fromSplitRect = returnRectRef.current;
+            returnRectRef.current = null;
+
+            if (fromSplitRect && heroFrameRef.current) {
+              const nextRect = heroFrameRef.current.getBoundingClientRect();
+              if (nextRect.width > 0 && fromSplitRect.width > 0) {
+                const dx =
+                  fromSplitRect.left +
+                  fromSplitRect.width / 2 -
+                  (nextRect.left + nextRect.width / 2);
+                const dy =
+                  fromSplitRect.top +
+                  fromSplitRect.height / 2 -
+                  (nextRect.top + nextRect.height / 2);
+                const scale = fromSplitRect.width / nextRect.width;
+
+                gsap.from(heroFrameRef.current, {
+                  x: dx,
+                  y: dy,
+                  scale,
+                  duration: 0.5,
+                  ease: 'power3.out',
+                  clearProps: 'transform',
+                });
+              }
+            } else if (heroFrameRef.current) {
+              gsap.from(heroFrameRef.current, {
+                y: 12,
+                autoAlpha: 0,
+                duration: 0.42,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity,visibility',
+              });
+            }
+
+            gsap.from('.compose-chrome', {
+              y: 12,
               autoAlpha: 0,
-              scale: 0.985,
-              duration: 0.48,
+              duration: 0.42,
+              stagger: 0.06,
               ease: 'power3.out',
               clearProps: 'transform,opacity,visibility',
             });
           } else if (activeMode === 'embed' && embedStage === 'split' && embedResult) {
-            gsap.from('.split-cover-frame', {
-              x: -20,
+            const fromComposeRect = heroRectRef.current;
+            heroRectRef.current = null;
+
+            if (fromComposeRect && splitCoverFrameRef.current) {
+              const nextRect = splitCoverFrameRef.current.getBoundingClientRect();
+              if (nextRect.width > 0 && fromComposeRect.width > 0) {
+                const dx =
+                  fromComposeRect.left +
+                  fromComposeRect.width / 2 -
+                  (nextRect.left + nextRect.width / 2);
+                const dy =
+                  fromComposeRect.top +
+                  fromComposeRect.height / 2 -
+                  (nextRect.top + nextRect.height / 2);
+                const scale = fromComposeRect.width / nextRect.width;
+
+                gsap.from(splitCoverFrameRef.current, {
+                  x: dx,
+                  y: dy,
+                  scale,
+                  duration: 0.55,
+                  ease: 'power3.out',
+                  clearProps: 'transform',
+                });
+              }
+            } else {
+              gsap.from('.split-cover-frame', {
+                x: -20,
+                autoAlpha: 0,
+                duration: 0.5,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity,visibility',
+              });
+            }
+
+            gsap.from('.split-chrome', {
+              y: 10,
               autoAlpha: 0,
-              duration: 0.5,
+              duration: 0.4,
               ease: 'power3.out',
               clearProps: 'transform,opacity,visibility',
             });
 
             gsap.from('.scheme-stagger-card', {
-              y: 24,
+              y: 22,
               autoAlpha: 0,
-              duration: 0.55,
+              duration: 0.52,
               stagger: 0.1,
+              delay: 0.06,
               ease: 'power3.out',
               clearProps: 'transform,opacity,visibility',
             });
@@ -222,6 +346,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     { scope: stageRef, dependencies: [activeMode, embedStage, embedResult] },
   );
 
+  const handleScrollSlider = (direction: -1 | 1) => {
+    sliderRef.current?.scrollBy({ left: direction * 240, behavior: 'smooth' });
+  };
+
   const handleEmbed = async () => {
     if (!selectedSample || isEmbedding) return;
     setIsEmbedding(true);
@@ -233,6 +361,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         filename: selectedSample.filename,
         message,
       });
+      heroRectRef.current = heroFrameRef.current?.getBoundingClientRect() ?? null;
       setEmbedResult(response);
       setEmbedStage('split');
     } catch (err) {
@@ -243,6 +372,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   };
 
   const handleBackToCompose = () => {
+    returnRectRef.current = splitCoverFrameRef.current?.getBoundingClientRect() ?? null;
     setEmbedStage('compose');
   };
 
@@ -341,227 +471,185 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
       <div ref={stageRef}>
         {activeMode === 'embed' && embedStage === 'compose' && (
-          <main className="flex min-h-[calc(100dvh-3.5rem)] items-center justify-center px-4 py-6 sm:px-6 lg:h-[calc(100dvh-3.5rem)] lg:overflow-hidden lg:py-0">
-            <div className="compose-folio w-full max-w-3xl rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] p-5 shadow-[0_24px_60px_-36px_rgba(17,17,16,0.22)] will-change-transform sm:p-7">
-              <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[#E4DFD3] pb-4">
-                <div>
-                  <div className="font-mono-tabular text-[10px] uppercase tracking-[0.2em] text-[#9A6B2F]">
-                    Adaptive Batik RGB Steganography
-                  </div>
-                  <h1 className="font-editorial mt-0.5 text-3xl leading-none tracking-tight text-[#111110] sm:text-4xl">
-                    Embed into <span className="italic text-[#9A6B2F]">Sogan &amp; Indigo</span>
-                  </h1>
+          <main className="flex h-[calc(100dvh-3.5rem)] flex-col items-center justify-center gap-4 overflow-hidden px-4 py-4 sm:gap-5 sm:px-6">
+            {/* 1. Top — Compact Horizontal Sample Slider */}
+            <div className="compose-chrome w-full max-w-[560px]">
+              {samplesLoading ? (
+                <div className="flex items-center justify-center gap-2 py-2">
+                  {Array.from({ length: 8 }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="h-11 w-11 shrink-0 animate-pulse rounded-lg border border-[#E4DFD3] bg-[#FDFCF9]"
+                    />
+                  ))}
                 </div>
+              ) : samplesError ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-[#B45309]/35 bg-[#B45309]/[0.06] px-3.5 py-2 text-xs text-[#111110]">
+                  <span className="truncate">{samplesError}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSamplesLoading(true);
+                      setSamplesError(null);
+                      void loadCatalogAndHealth();
+                    }}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#E4DFD3] bg-[#FDFCF9] px-2.5 py-1 font-medium hover:border-[#111110]"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Retry</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-label="Scroll samples left"
+                    onClick={() => handleScrollSlider(-1)}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E4DFD3] bg-[#FDFCF9] text-[#6B665C] transition-colors hover:border-[#9A6B2F] hover:text-[#111110]"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(true)}
-                  disabled={samplesLoading || samples.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[#E4DFD3] bg-[#F6F4EF] px-3 py-1.5 text-xs font-medium text-[#111110] transition-colors hover:border-[#9A6B2F] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Grid2x2 className="h-3.5 w-3.5 text-[#9A6B2F]" />
-                  <span>All {samples.length || 45} Specimens</span>
-                </button>
-              </div>
-
-              <div className="mt-4">
-                {samplesLoading && (
-                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                    {[0, 1, 2].map((idx) => (
-                      <div
-                        key={idx}
-                        className="h-20 animate-pulse rounded-xl border border-[#E4DFD3] bg-[#F6F4EF]"
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {!samplesLoading && samplesError && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#B45309]/35 bg-[#B45309]/[0.06] px-4 py-3 text-xs text-[#111110]">
-                    <span>Unable to load specimens: {samplesError}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSamplesLoading(true);
-                        setSamplesError(null);
-                        void loadCatalogAndHealth();
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[#E4DFD3] bg-[#FDFCF9] px-3 py-1 font-medium hover:border-[#111110]"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      Retry
-                    </button>
-                  </div>
-                )}
-
-                {!samplesLoading && !samplesError && featuredSamples.length > 0 && (
-                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                    {featuredSamples.map((sample) => {
-                      const selected =
-                        selectedSample?.motif === sample.motif &&
-                        selectedSample?.filename === sample.filename;
+                  <div
+                    ref={sliderRef}
+                    role="listbox"
+                    aria-label="Batik cover samples"
+                    className="no-scrollbar flex flex-1 items-center gap-2 overflow-x-auto scroll-smooth px-1.5 py-2"
+                  >
+                    {orderedSamples.map((sample) => {
+                      const key = sampleKey(sample);
+                      const selected = key === selectedSampleKey;
                       return (
                         <button
-                          key={`${sample.motif}/${sample.filename}`}
+                          key={key}
+                          ref={(el) => {
+                            if (el) {
+                              thumbRefs.current.set(key, el);
+                            } else {
+                              thumbRefs.current.delete(key);
+                            }
+                          }}
                           type="button"
+                          role="option"
+                          aria-selected={selected}
+                          aria-label={`Select ${sample.filename}`}
+                          title={`${sample.motif} · ${sample.filename}`}
                           onClick={() => setSelectedSample(sample)}
-                          className={`group flex items-center gap-3 rounded-xl border p-2.5 text-left transition-all ${
+                          className={`relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-[#FDFCF9] transition-all duration-200 focus:outline-none ${
                             selected
-                              ? 'border-[#9A6B2F] bg-[#F6F4EF] ring-1 ring-[#9A6B2F]'
-                              : 'border-[#E4DFD3] bg-[#FDFCF9] hover:border-[#9A6B2F]/60'
+                              ? 'scale-105 ring-2 ring-[#9A6B2F] ring-offset-2 ring-offset-[#F6F4EF]'
+                              : 'opacity-80 ring-1 ring-[#E4DFD3] hover:opacity-100 hover:ring-[#9A6B2F]/60'
                           }`}
                         >
                           <img
                             src={sample.image_url}
                             alt={`${sample.motif} ${sample.filename}`}
-                            className="h-14 w-14 shrink-0 rounded-lg border border-[#E4DFD3] bg-[#F6F4EF] object-cover"
+                            loading="lazy"
+                            className="h-full w-full object-cover"
                           />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-mono-tabular text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9A6B2F]">
-                                {sample.motif}
-                              </span>
-                              {selected && (
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#9A6B2F]" />
-                              )}
-                            </div>
-                            <div className="truncate font-mono-tabular text-xs font-medium text-[#111110]">
-                              {sample.filename}
-                            </div>
-                            <div className="mt-0.5 font-mono-tabular text-[10px] text-[#6B665C]">
-                              S3 max {formatKb(sample.capacities.scheme3.max_payload_bytes)}
-                            </div>
-                          </div>
                         </button>
                       );
                     })}
                   </div>
-                )}
 
-                {!samplesLoading && !samplesError && selectedSample && !isSelectedFeatured && (
-                  <div className="mt-2.5 flex items-center justify-between gap-2 rounded-lg border border-[#9A6B2F]/40 bg-[#F6F4EF] px-3 py-1.5 text-xs">
-                    <div className="flex items-center gap-2">
-                      <img
-                        src={selectedSample.image_url}
-                        alt={selectedSample.filename}
-                        className="h-6 w-6 rounded border border-[#E4DFD3] object-cover"
-                      />
-                      <span className="text-[#6B665C]">
-                        Active specimen:{' '}
-                        <strong className="font-mono-tabular text-[#111110]">
-                          {selectedSample.filename}
-                        </strong>{' '}
-                        <span className="capitalize">({selectedSample.motif})</span>
-                      </span>
-                    </div>
-                    <span className="font-mono-tabular text-[11px] text-[#9A6B2F]">
-                      S3 {formatKb(selectedSample.capacities.scheme3.max_payload_bytes)}
-                    </span>
-                  </div>
+                  <button
+                    type="button"
+                    aria-label="Scroll samples right"
+                    onClick={() => handleScrollSlider(1)}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E4DFD3] bg-[#FDFCF9] text-[#6B665C] transition-colors hover:border-[#9A6B2F] hover:text-[#111110]"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Center — Big Hero Image of Selected Sample */}
+            <div className="flex flex-col items-center">
+              <div
+                ref={heroFrameRef}
+                className="relative aspect-square w-[clamp(220px,38vh,360px)] overflow-hidden rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] shadow-[0_24px_60px_-32px_rgba(17,17,16,0.28)] will-change-transform"
+              >
+                {selectedSample ? (
+                  <img
+                    ref={heroImgRef}
+                    src={selectedSample.image_url}
+                    alt={`${selectedSample.motif} ${selectedSample.filename}`}
+                    className="h-full w-full object-cover will-change-transform"
+                  />
+                ) : (
+                  <div className="h-full w-full animate-pulse bg-[#EFECE3]" />
                 )}
               </div>
 
-              <div className="mt-4 border-t border-[#E4DFD3] pt-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label
-                    htmlFor="hifi-payload-input"
-                    className="font-mono-tabular text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6B665C]"
-                  >
-                    Secret UTF-8 Payload
-                  </label>
+              {selectedSample && (
+                <div className="compose-chrome mt-2.5 inline-flex items-center rounded-full border border-[#E4DFD3] bg-[#FDFCF9]/90 px-2.5 py-0.5 font-mono-tabular text-[11px] text-[#6B665C]">
+                  {selectedSample.filename}
+                </div>
+              )}
+            </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {PAYLOAD_PRESETS.map((preset) => (
+            {/* 3. Bottom — Minimal Message Field + Presets + Embed CTA */}
+            <div className="compose-chrome w-full max-w-[520px]">
+              <textarea
+                id="hifi-payload-input"
+                rows={2}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Write a secret message..."
+                aria-label="Secret message"
+                className="w-full resize-none rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-3.5 py-2.5 text-xs leading-relaxed text-[#111110] placeholder:text-[#6B665C]/65 transition-colors focus:border-[#9A6B2F] focus:outline-none sm:text-[13px]"
+              />
+
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {PAYLOAD_PRESETS.map((preset) => {
+                    const activePreset = payloadBytes === preset.bytes;
+                    return (
                       <button
                         key={preset.label}
                         type="button"
                         disabled={isEmbedding}
                         onClick={() => setMessage(generateDeterministicPayload(preset.bytes))}
-                        className="rounded-full border border-[#E4DFD3] bg-[#F6F4EF] px-2.5 py-0.5 font-mono-tabular text-[11px] font-medium text-[#111110] transition-colors hover:border-[#9A6B2F] disabled:opacity-50"
+                        className={`rounded-full border px-2.5 py-1 font-mono-tabular text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                          activePreset
+                            ? 'border-[#9A6B2F] bg-[#FDFCF9] text-[#9A6B2F]'
+                            : 'border-[#E4DFD3] bg-[#FDFCF9] text-[#111110] hover:border-[#9A6B2F]'
+                        }`}
                       >
                         {preset.label}
                       </button>
-                    ))}
-                    <button
-                      type="button"
-                      disabled={isEmbedding}
-                      onClick={() => setMessage(SAMPLE_MESSAGE)}
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-[#6B665C] underline-offset-2 hover:text-[#111110] hover:underline disabled:opacity-50"
+                    );
+                  })}
+
+                  <span className="ml-1 font-mono-tabular text-[11px] text-[#6B665C]">
+                    {formatBytes(payloadBytes)}
+                  </span>
+
+                  {s1Overflow && (
+                    <span
+                      className="rounded-full border border-[#B45309]/35 bg-[#B45309]/10 px-2 py-0.5 font-mono-tabular text-[10px] font-medium text-[#B45309]"
+                      title={
+                        s1Max !== null
+                          ? `Exceeds Scheme 1 max (${formatBytes(s1Max)}); Scheme 2 & 3 embed cleanly`
+                          : 'Exceeds Scheme 1 max capacity'
+                      }
                     >
-                      <RotateCcw className="h-3 w-3" />
-                      Sample
-                    </button>
-                  </div>
-                </div>
-
-                <textarea
-                  id="hifi-payload-input"
-                  rows={4}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Write secret UTF-8 text or choose a payload preset above…"
-                  className="mt-2 w-full resize-none rounded-xl border border-[#E4DFD3] bg-[#F6F4EF]/65 px-3.5 py-2.5 font-mono-tabular text-xs leading-relaxed text-[#111110] placeholder:text-[#6B665C]/60 focus:border-[#9A6B2F] focus:bg-[#FDFCF9] focus:outline-none"
-                />
-
-                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-mono-tabular text-[11px] text-[#6B665C]">
-                    Payload:{' '}
-                    <strong className="text-[#111110]">{formatBytes(payloadBytes)}</strong> (
-                    {(payloadBytes / 1024).toFixed(2)} KB)
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3 font-mono-tabular text-[11px]">
-                    {schemeReadiness.map(({ scheme, overflow }) => (
-                      <span
-                        key={scheme}
-                        className="inline-flex items-center gap-1.5 text-[#6B665C]"
-                        title={SCHEME_META[scheme].fullName}
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            overflow ? 'bg-[#B45309]' : 'bg-[#15803D]'
-                          }`}
-                        />
-                        <span className={overflow ? 'text-[#B45309]' : 'text-[#111110]'}>
-                          {SCHEME_META[scheme].shortLabel.replace('Scheme ', 'S')}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {scheme1Overflow && scheme1Max !== null && (
-                  <p className="mt-2 rounded-lg border border-[#B45309]/30 bg-[#B45309]/[0.06] px-3 py-1.5 text-[11px] text-[#B45309]">
-                    Payload exceeds Scheme 1 max capacity ({formatBytes(scheme1Max)}). Scheme 1
-                    will report overflow, while <strong>Scheme 2 &amp; Scheme 3</strong> still
-                    embed cleanly.
-                  </p>
-                )}
-
-                {embedError && (
-                  <p className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800">
-                    {embedError}
-                  </p>
-                )}
-              </div>
-
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#E4DFD3] pt-4">
-                <div className="font-mono-tabular text-[11px] text-[#6B665C]">
-                  {selectedSample
-                    ? `${selectedSample.motif}/${selectedSample.filename} · ${selectedSample.width}×${selectedSample.height} RGB`
-                    : 'Waiting for specimen catalog…'}
+                      S1 overflow
+                    </span>
+                  )}
                 </div>
 
                 <button
                   type="button"
                   onClick={() => void handleEmbed()}
                   disabled={!selectedSample || isEmbedding}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#111110] px-6 py-2.5 text-xs font-semibold tracking-wide text-[#FDFCF9] transition-all hover:bg-[#9A6B2F] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-[#D5CEBE] disabled:text-[#6B665C]"
+                  className="inline-flex items-center gap-2 rounded-full bg-[#111110] px-5 py-2 text-xs font-semibold tracking-wide text-[#FDFCF9] transition-all hover:bg-[#9A6B2F] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-[#D5CEBE] disabled:text-[#6B665C]"
                 >
                   {isEmbedding ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Embedding 3 Schemes…</span>
+                      <span>Embedding…</span>
                     </>
                   ) : (
                     <>
@@ -571,6 +659,12 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                   )}
                 </button>
               </div>
+
+              {embedError && (
+                <p className="mt-2 truncate rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800">
+                  {embedError}
+                </p>
+              )}
             </div>
           </main>
         )}
@@ -578,7 +672,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         {activeMode === 'embed' && embedStage === 'split' && embedResult && (
           <main className="mx-auto grid max-w-[1440px] grid-cols-1 lg:h-[calc(100dvh-3.5rem)] lg:grid-cols-2 lg:overflow-hidden">
             <section className="split-cover-frame flex flex-col justify-between border-b border-[#E4DFD3] bg-[#F6F4EF] p-5 will-change-transform lg:h-[calc(100dvh-3.5rem)] lg:border-r lg:border-b-0 lg:p-7">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="split-chrome flex flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={handleBackToCompose}
@@ -621,7 +715,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               </div>
 
               <div className="my-5 flex flex-1 items-center justify-center">
-                <figure className="w-full max-w-[420px] rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] p-4 shadow-[0_20px_50px_-34px_rgba(17,17,16,0.28)]">
+                <figure
+                  ref={splitCoverFrameRef}
+                  className="w-full max-w-[420px] rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] p-4 shadow-[0_20px_50px_-34px_rgba(17,17,16,0.28)] will-change-transform"
+                >
                   <div className="overflow-hidden rounded-xl border border-[#E4DFD3] bg-[#F6F4EF]">
                     {activeCoverSample ? (
                       <img
@@ -635,7 +732,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                       </div>
                     )}
                   </div>
-                  <figcaption className="mt-3 flex items-baseline justify-between gap-2 border-t border-[#E4DFD3] pt-2.5">
+                  <figcaption className="split-chrome mt-3 flex items-baseline justify-between gap-2 border-t border-[#E4DFD3] pt-2.5">
                     <div>
                       <div className="font-mono-tabular text-[10px] uppercase tracking-[0.16em] text-[#9A6B2F]">
                         Original Cover Plate
@@ -659,7 +756,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 </figure>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E4DFD3] pt-3 font-mono-tabular text-[11px] text-[#6B665C]">
+              <div className="split-chrome flex flex-wrap items-center justify-between gap-2 border-t border-[#E4DFD3] pt-3 font-mono-tabular text-[11px] text-[#6B665C]">
                 <span>3-Scheme Blind PVDM Evaluation</span>
                 <span>
                   Viewing:{' '}
@@ -694,14 +791,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
           </main>
         )}
       </div>
-
-      <SpecimenModal
-        open={modalOpen}
-        samples={samples}
-        selectedSample={selectedSample}
-        onSelect={setSelectedSample}
-        onClose={() => setModalOpen(false)}
-      />
     </div>
   );
 }
