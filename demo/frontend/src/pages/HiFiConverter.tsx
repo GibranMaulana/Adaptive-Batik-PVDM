@@ -1,32 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  Layers,
-  Loader2,
-  RefreshCw,
-  Sparkles,
-} from 'lucide-react';
+import { Flip } from 'gsap/Flip';
+import { ArrowLeft, ArrowUpRight, Loader2, Sparkles } from 'lucide-react';
 import { embedPayload, fetchHealth, fetchSamples } from '../api/client';
-import type { EmbedResponse, HealthResponse, SampleSummary } from '../api/types';
+import type { EmbedResponse, HealthResponse, SampleSummary, SchemeName } from '../api/types';
 import { HiFiExtractor, type HiFiPreloadExtract } from '../components/hifi/HiFiExtractor';
-import { SchemeResultCard, type GalleryViewMode } from '../components/hifi/SchemeResultCard';
+import type { GalleryViewMode } from '../components/hifi/SchemeResultCard';
+import { StegoFocusPane } from '../components/hifi/StegoFocusPane';
+import { StegoOverviewPane } from '../components/hifi/StegoOverviewPane';
+import { TopSampleSlider } from '../components/hifi/TopSampleSlider';
 import {
+  ALL_SCHEMES,
   SAMPLE_MESSAGE,
   formatBytes,
   generateDeterministicPayload,
   utf8ByteLength,
 } from '../utils/payload';
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, Flip);
 
 type ActiveMode = 'embed' | 'extract';
-type EmbedStage = 'compose' | 'split';
+type EmbedStage = 'compose' | 'overview' | 'focus';
 
 interface HiFiConverterProps {
   onNavigate: (path: string) => void;
@@ -67,19 +62,35 @@ function pickDefaultSample(samples: SampleSummary[]): SampleSummary | null {
   );
 }
 
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
 export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const sliderRef = useRef<HTMLDivElement | null>(null);
-  const thumbRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-  const heroFrameRef = useRef<HTMLDivElement | null>(null);
+  const sampleFrameRef = useRef<HTMLDivElement | null>(null);
   const heroImgRef = useRef<HTMLImageElement | null>(null);
-  const splitCoverFrameRef = useRef<HTMLElement | null>(null);
-  const heroRectRef = useRef<DOMRect | null>(null);
-  const returnRectRef = useRef<DOMRect | null>(null);
+  const focusMediaRef = useRef<HTMLDivElement | null>(null);
+
+  const pendingFlipStateRef = useRef<Flip.FlipState | null>(null);
+  const stegoFlipStateRef = useRef<Flip.FlipState | null>(null);
+  const overviewEnterNeedsBeat3Ref = useRef(false);
+  const beat1TimelineRef = useRef<gsap.core.Timeline | null>(null);
+
+  const prevSampleKeyRef = useRef<string>('');
+  const prevFocusedSchemeRef = useRef<SchemeName | null>(null);
+  const lastFocusedSchemeRef = useRef<SchemeName | null>(null);
+  const focusSwitchDirRef = useRef<1 | -1>(1);
+
+  const embedRequestIdRef = useRef(0);
   const extractCounterRef = useRef(0);
 
   const [activeMode, setActiveMode] = useState<ActiveMode>('embed');
   const [embedStage, setEmbedStage] = useState<EmbedStage>('compose');
+  const [focusedScheme, setFocusedScheme] = useState<SchemeName | null>(null);
 
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthOffline, setHealthOffline] = useState(false);
@@ -91,6 +102,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
   const [message, setMessage] = useState<string>(SAMPLE_MESSAGE);
   const [isEmbedding, setIsEmbedding] = useState(false);
+  const [isTransitioningOut, setIsTransitioningOut] = useState(false);
   const [embedError, setEmbedError] = useState<string | null>(null);
   const [embedResult, setEmbedResult] = useState<EmbedResponse | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('stego');
@@ -171,20 +183,16 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const s1Max = selectedSample?.capacities.scheme1.max_payload_bytes ?? null;
   const s1Overflow = s1Max !== null && payloadBytes > s1Max;
 
-  useEffect(() => {
-    if (!selectedSampleKey || activeMode !== 'embed' || embedStage !== 'compose') return;
-    const activeThumb = thumbRefs.current.get(selectedSampleKey);
-    activeThumb?.scrollIntoView({
-      behavior: 'smooth',
-      inline: 'center',
-      block: 'nearest',
-    });
-  }, [selectedSampleKey, activeMode, embedStage]);
-
-  // Hero image swap animation whenever selectedSample changes
+  // 1. Hero image swap animation when picking a different sample in compose
   useGSAP(
     () => {
-      if (activeMode !== 'embed' || embedStage !== 'compose' || !selectedSampleKey) return;
+      if (!selectedSampleKey) return;
+      const prevKey = prevSampleKeyRef.current;
+      prevSampleKeyRef.current = selectedSampleKey;
+
+      if (!prevKey || prevKey === selectedSampleKey) return;
+      if (activeMode !== 'embed' || embedStage !== 'compose') return;
+
       const heroImg = heroImgRef.current;
       if (!heroImg) return;
 
@@ -215,7 +223,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     { scope: stageRef, dependencies: [selectedSampleKey] },
   );
 
-  // Stage transition animations (compose <-> split <-> extract)
+  // 2. Stage choreography: compose <-> overview <-> focus <-> extract
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
@@ -224,116 +232,246 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         (context) => {
           const reduceMotion = Boolean(context.conditions?.reduceMotion);
           if (reduceMotion) {
-            heroRectRef.current = null;
-            returnRectRef.current = null;
+            pendingFlipStateRef.current = null;
+            stegoFlipStateRef.current = null;
+            overviewEnterNeedsBeat3Ref.current = false;
             return;
           }
 
-          if (activeMode === 'embed' && embedStage === 'compose') {
-            const fromSplitRect = returnRectRef.current;
-            returnRectRef.current = null;
-
-            if (fromSplitRect && heroFrameRef.current) {
-              const nextRect = heroFrameRef.current.getBoundingClientRect();
-              if (nextRect.width > 0 && fromSplitRect.width > 0) {
-                const dx =
-                  fromSplitRect.left +
-                  fromSplitRect.width / 2 -
-                  (nextRect.left + nextRect.width / 2);
-                const dy =
-                  fromSplitRect.top +
-                  fromSplitRect.height / 2 -
-                  (nextRect.top + nextRect.height / 2);
-                const scale = fromSplitRect.width / nextRect.width;
-
-                gsap.from(heroFrameRef.current, {
-                  x: dx,
-                  y: dy,
-                  scale,
-                  duration: 0.5,
-                  ease: 'power3.out',
-                  clearProps: 'transform',
-                });
-              }
-            } else if (heroFrameRef.current) {
-              gsap.from(heroFrameRef.current, {
-                y: 12,
-                autoAlpha: 0,
-                duration: 0.42,
-                ease: 'power3.out',
-                clearProps: 'transform,opacity,visibility',
-              });
-            }
-
-            gsap.from('.compose-chrome', {
-              y: 12,
-              autoAlpha: 0,
-              duration: 0.42,
-              stagger: 0.06,
-              ease: 'power3.out',
-              clearProps: 'transform,opacity,visibility',
-            });
-          } else if (activeMode === 'embed' && embedStage === 'split' && embedResult) {
-            const fromComposeRect = heroRectRef.current;
-            heroRectRef.current = null;
-
-            if (fromComposeRect && splitCoverFrameRef.current) {
-              const nextRect = splitCoverFrameRef.current.getBoundingClientRect();
-              if (nextRect.width > 0 && fromComposeRect.width > 0) {
-                const dx =
-                  fromComposeRect.left +
-                  fromComposeRect.width / 2 -
-                  (nextRect.left + nextRect.width / 2);
-                const dy =
-                  fromComposeRect.top +
-                  fromComposeRect.height / 2 -
-                  (nextRect.top + nextRect.height / 2);
-                const scale = fromComposeRect.width / nextRect.width;
-
-                gsap.from(splitCoverFrameRef.current, {
-                  x: dx,
-                  y: dy,
-                  scale,
-                  duration: 0.55,
-                  ease: 'power3.out',
-                  clearProps: 'transform',
-                });
-              }
-            } else {
-              gsap.from('.split-cover-frame', {
-                x: -20,
-                autoAlpha: 0,
-                duration: 0.5,
-                ease: 'power3.out',
-                clearProps: 'transform,opacity,visibility',
-              });
-            }
-
-            gsap.from('.split-chrome', {
-              y: 10,
-              autoAlpha: 0,
-              duration: 0.4,
-              ease: 'power3.out',
-              clearProps: 'transform,opacity,visibility',
-            });
-
-            gsap.from('.scheme-stagger-card', {
-              y: 22,
-              autoAlpha: 0,
-              duration: 0.52,
-              stagger: 0.1,
-              delay: 0.06,
-              ease: 'power3.out',
-              clearProps: 'transform,opacity,visibility',
-            });
-          } else if (activeMode === 'extract') {
+          if (activeMode === 'extract') {
+            pendingFlipStateRef.current = null;
+            stegoFlipStateRef.current = null;
             gsap.from('.extract-stage', {
               y: 16,
               autoAlpha: 0,
-              duration: 0.45,
+              duration: 0.42,
               ease: 'power3.out',
               clearProps: 'transform,opacity,visibility',
             });
+            return;
+          }
+
+          if (embedStage === 'compose') {
+            const flipState = pendingFlipStateRef.current;
+            pendingFlipStateRef.current = null;
+
+            if (flipState && sampleFrameRef.current) {
+              Flip.from(flipState, {
+                duration: 0.58,
+                ease: 'power3.inOut',
+                scale: true,
+                onComplete: () => {
+                  if (sampleFrameRef.current) {
+                    gsap.set(sampleFrameRef.current, { clearProps: 'transform' });
+                  }
+                },
+              });
+            } else if (sampleFrameRef.current) {
+              gsap.fromTo(
+                sampleFrameRef.current,
+                { y: 12, opacity: 0 },
+                {
+                  y: 0,
+                  opacity: 1,
+                  duration: 0.42,
+                  ease: 'power3.out',
+                  clearProps: 'transform,opacity',
+                },
+              );
+            }
+
+            gsap.fromTo(
+              '.compose-top-slider',
+              { y: -18, opacity: 0 },
+              {
+                y: 0,
+                opacity: 1,
+                duration: 0.4,
+                delay: flipState ? 0.14 : 0.02,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity',
+              },
+            );
+
+            gsap.fromTo(
+              '.compose-bottom-composer',
+              { y: 18, opacity: 0 },
+              {
+                y: 0,
+                opacity: 1,
+                duration: 0.4,
+                delay: flipState ? 0.16 : 0.05,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity',
+              },
+            );
+
+            gsap.fromTo(
+              '.compose-hero-caption',
+              { y: 8, opacity: 0 },
+              {
+                y: 0,
+                opacity: 1,
+                duration: 0.35,
+                delay: flipState ? 0.18 : 0.06,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity',
+              },
+            );
+            return;
+          }
+
+          if (embedStage === 'overview') {
+            const heroFlipState = pendingFlipStateRef.current;
+            pendingFlipStateRef.current = null;
+
+            const stegoFlipState = stegoFlipStateRef.current;
+            stegoFlipStateRef.current = null;
+
+            const useBeat3Delay = overviewEnterNeedsBeat3Ref.current;
+            overviewEnterNeedsBeat3Ref.current = false;
+
+            // Beat 2: Seamless Flip of persistent hero sample from center -> left 50%
+            if (heroFlipState && sampleFrameRef.current) {
+              Flip.from(heroFlipState, {
+                duration: 0.65,
+                ease: 'power3.inOut',
+                scale: true,
+                onComplete: () => {
+                  if (sampleFrameRef.current) {
+                    gsap.set(sampleFrameRef.current, { clearProps: 'transform' });
+                  }
+                },
+              });
+
+              gsap.fromTo(
+                '.split-left-chrome',
+                { y: 10, opacity: 0 },
+                {
+                  y: 0,
+                  opacity: 1,
+                  duration: 0.4,
+                  delay: 0.2,
+                  ease: 'power3.out',
+                  clearProps: 'transform,opacity',
+                },
+              );
+            }
+
+            // Returning from focus ("All 3")
+            if (stegoFlipState && lastFocusedSchemeRef.current) {
+              const targetTile = stageRef.current?.querySelector<HTMLElement>(
+                `[data-flip-id="stego-${lastFocusedSchemeRef.current}"]`,
+              );
+              if (targetTile) {
+                Flip.from(stegoFlipState, {
+                  targets: targetTile,
+                  duration: 0.44,
+                  ease: 'power3.inOut',
+                  scale: true,
+                  onComplete: () => {
+                    gsap.set(targetTile, { clearProps: 'transform' });
+                  },
+                });
+              }
+
+              const otherSlots = Array.from(
+                stageRef.current?.querySelectorAll<HTMLElement>('.stego-overview-slot') ?? [],
+              ).filter(
+                (slot) =>
+                  !slot.querySelector(`[data-flip-id="stego-${lastFocusedSchemeRef.current}"]`),
+              );
+
+              if (otherSlots.length > 0) {
+                gsap.fromTo(
+                  otherSlots,
+                  { opacity: 0, y: 12 },
+                  {
+                    opacity: 1,
+                    y: 0,
+                    duration: 0.36,
+                    stagger: 0.06,
+                    delay: 0.08,
+                    ease: 'power3.out',
+                    clearProps: 'transform,opacity',
+                  },
+                );
+              }
+              return;
+            }
+
+            // Beat 3 (0.55s = 0.27s after Beat 2 starts at 0.28s): Stagger 3 stego slots on right 50%
+            gsap.fromTo(
+              '.stego-overview-slot',
+              { x: 36, opacity: 0 },
+              {
+                x: 0,
+                opacity: 1,
+                duration: 0.5,
+                stagger: 0.09,
+                delay: useBeat3Delay ? 0.27 : 0.06,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity',
+              },
+            );
+            return;
+          }
+
+          if (embedStage === 'focus') {
+            const stegoFlipState = stegoFlipStateRef.current;
+            stegoFlipStateRef.current = null;
+
+            if (stegoFlipState && focusMediaRef.current) {
+              Flip.from(stegoFlipState, {
+                targets: focusMediaRef.current,
+                duration: 0.48,
+                ease: 'power3.inOut',
+                scale: true,
+                onComplete: () => {
+                  if (focusMediaRef.current) {
+                    gsap.set(focusMediaRef.current, { clearProps: 'transform' });
+                  }
+                },
+              });
+            } else {
+              gsap.fromTo(
+                '.focus-swap-content',
+                { scale: 0.97, opacity: 0 },
+                {
+                  scale: 1,
+                  opacity: 1,
+                  duration: 0.4,
+                  ease: 'power3.out',
+                  clearProps: 'transform,opacity',
+                },
+              );
+            }
+
+            gsap.fromTo(
+              '.focus-top-bar',
+              { y: -10, opacity: 0 },
+              {
+                y: 0,
+                opacity: 1,
+                duration: 0.34,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity',
+              },
+            );
+
+            gsap.fromTo(
+              '.focus-detail-stagger',
+              { y: 14, opacity: 0 },
+              {
+                y: 0,
+                opacity: 1,
+                duration: 0.38,
+                stagger: 0.06,
+                delay: 0.08,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity',
+              },
+            );
           }
         },
         stageRef,
@@ -343,37 +481,242 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         mm.revert();
       };
     },
-    { scope: stageRef, dependencies: [activeMode, embedStage, embedResult] },
+    { scope: stageRef, dependencies: [activeMode, embedStage] },
   );
 
-  const handleScrollSlider = (direction: -1 | 1) => {
-    sliderRef.current?.scrollBy({ left: direction * 240, behavior: 'smooth' });
-  };
+  // 3. Fade stego images cleanly into the 3 overview slots as soon as embedResult arrives
+  useGSAP(
+    () => {
+      if (!embedResult || activeMode !== 'embed' || embedStage !== 'overview') return;
 
-  const handleEmbed = async () => {
-    if (!selectedSample || isEmbedding) return;
+      const mm = gsap.matchMedia();
+      mm.add(
+        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        (context) => {
+          if (context.conditions?.reduceMotion) return;
+
+          gsap.fromTo(
+            '.stego-reveal-image',
+            { opacity: 0, scale: 0.98 },
+            {
+              opacity: 1,
+              scale: 1,
+              duration: 0.45,
+              stagger: 0.06,
+              ease: 'power3.out',
+              clearProps: 'transform,opacity',
+            },
+          );
+        },
+        stageRef,
+      );
+
+      return () => mm.revert();
+    },
+    { scope: stageRef, dependencies: [embedResult] },
+  );
+
+  // 4. Crisp crossfade/slide when switching between 01 | 02 | 03 in focus stage
+  useGSAP(
+    () => {
+      if (!focusedScheme) {
+        prevFocusedSchemeRef.current = null;
+        return;
+      }
+      const prev = prevFocusedSchemeRef.current;
+      prevFocusedSchemeRef.current = focusedScheme;
+
+      if (!prev || prev === focusedScheme) return;
+      if (activeMode !== 'embed' || embedStage !== 'focus') return;
+
+      const dir = focusSwitchDirRef.current;
+      const mm = gsap.matchMedia();
+      mm.add(
+        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        (context) => {
+          if (context.conditions?.reduceMotion) return;
+
+          gsap.fromTo(
+            '.focus-swap-content',
+            { x: dir * 24, opacity: 0 },
+            {
+              x: 0,
+              opacity: 1,
+              duration: 0.34,
+              ease: 'power3.out',
+              clearProps: 'transform,opacity',
+            },
+          );
+        },
+        stageRef,
+      );
+
+      return () => mm.revert();
+    },
+    { scope: stageRef, dependencies: [focusedScheme] },
+  );
+
+  const handleEmbed = () => {
+    if (!selectedSample || isEmbedding || isTransitioningOut) return;
+
+    embedRequestIdRef.current += 1;
+    const reqId = embedRequestIdRef.current;
+
     setIsEmbedding(true);
     setEmbedError(null);
+    setEmbedResult(null);
+    setFocusedScheme(null);
+    prevFocusedSchemeRef.current = null;
 
-    try {
-      const response = await embedPayload({
-        motif: selectedSample.motif,
-        filename: selectedSample.filename,
-        message,
+    // Kick off API call immediately in parallel with Beat 1 choreography
+    embedPayload({
+      motif: selectedSample.motif,
+      filename: selectedSample.filename,
+      message,
+    })
+      .then((response) => {
+        if (embedRequestIdRef.current !== reqId) return;
+        setEmbedResult(response);
+        setIsEmbedding(false);
+      })
+      .catch((err) => {
+        if (embedRequestIdRef.current !== reqId) return;
+        const messageText = err instanceof Error ? err.message : 'Embedding request failed.';
+        setIsEmbedding(false);
+        setEmbedError(messageText);
+
+        if (beat1TimelineRef.current) {
+          beat1TimelineRef.current.kill();
+          beat1TimelineRef.current = null;
+          setIsTransitioningOut(false);
+          if (!prefersReducedMotion()) {
+            gsap.to('.compose-top-slider, .compose-bottom-composer, .compose-hero-caption', {
+              y: 0,
+              opacity: 1,
+              duration: 0.28,
+              ease: 'power3.out',
+              clearProps: 'transform,opacity',
+            });
+          }
+          return;
+        }
+
+        // Gracefully Flip back to compose if already in overview/focus
+        if (!prefersReducedMotion() && sampleFrameRef.current) {
+          pendingFlipStateRef.current = Flip.getState(sampleFrameRef.current);
+        }
+        setFocusedScheme(null);
+        setEmbedStage('compose');
       });
-      heroRectRef.current = heroFrameRef.current?.getBoundingClientRect() ?? null;
-      setEmbedResult(response);
-      setEmbedStage('split');
-    } catch (err) {
-      setEmbedError(err instanceof Error ? err.message : 'Embedding request failed.');
-    } finally {
-      setIsEmbedding(false);
+
+    if (prefersReducedMotion()) {
+      pendingFlipStateRef.current = null;
+      overviewEnterNeedsBeat3Ref.current = false;
+      setEmbedStage('overview');
+      return;
     }
+
+    // Beat 1 (0.00s -> 0.28s): Slide top slider and bottom composer out, leaving ONLY hero sample
+    setIsTransitioningOut(true);
+    const tl = gsap.timeline({
+      onComplete: () => {
+        beat1TimelineRef.current = null;
+        setIsTransitioningOut(false);
+        if (embedRequestIdRef.current !== reqId) return;
+
+        if (sampleFrameRef.current) {
+          pendingFlipStateRef.current = Flip.getState(sampleFrameRef.current);
+        }
+        overviewEnterNeedsBeat3Ref.current = true;
+        setEmbedStage('overview');
+      },
+    });
+    beat1TimelineRef.current = tl;
+
+    tl.to(
+      '.compose-top-slider',
+      {
+        y: -24,
+        opacity: 0,
+        duration: 0.28,
+        ease: 'power2.in',
+      },
+      0,
+    )
+      .to(
+        '.compose-bottom-composer',
+        {
+          y: 24,
+          opacity: 0,
+          duration: 0.28,
+          ease: 'power2.in',
+        },
+        0,
+      )
+      .to(
+        '.compose-hero-caption',
+        {
+          y: 8,
+          opacity: 0,
+          duration: 0.2,
+          ease: 'power2.in',
+        },
+        0,
+      );
   };
 
   const handleBackToCompose = () => {
-    returnRectRef.current = splitCoverFrameRef.current?.getBoundingClientRect() ?? null;
+    embedRequestIdRef.current += 1;
+    if (beat1TimelineRef.current) {
+      beat1TimelineRef.current.kill();
+      beat1TimelineRef.current = null;
+    }
+    setIsTransitioningOut(false);
+    setIsEmbedding(false);
+
+    if (!prefersReducedMotion() && sampleFrameRef.current) {
+      pendingFlipStateRef.current = Flip.getState(sampleFrameRef.current);
+    } else {
+      pendingFlipStateRef.current = null;
+    }
+
+    stegoFlipStateRef.current = null;
+    prevFocusedSchemeRef.current = null;
+    setFocusedScheme(null);
     setEmbedStage('compose');
+  };
+
+  const handleSelectOverviewScheme = (scheme: SchemeName, tileMediaEl: HTMLElement | null) => {
+    if (!embedResult) return;
+    if (!prefersReducedMotion() && tileMediaEl) {
+      stegoFlipStateRef.current = Flip.getState(tileMediaEl);
+    } else {
+      stegoFlipStateRef.current = null;
+    }
+    prevFocusedSchemeRef.current = null;
+    lastFocusedSchemeRef.current = scheme;
+    setFocusedScheme(scheme);
+    setEmbedStage('focus');
+  };
+
+  const handleSwitchFocusedScheme = (nextScheme: SchemeName) => {
+    if (!focusedScheme || nextScheme === focusedScheme) return;
+    const prevIdx = ALL_SCHEMES.indexOf(focusedScheme);
+    const nextIdx = ALL_SCHEMES.indexOf(nextScheme);
+    focusSwitchDirRef.current = nextIdx >= prevIdx ? 1 : -1;
+    lastFocusedSchemeRef.current = nextScheme;
+    setFocusedScheme(nextScheme);
+  };
+
+  const handleReturnToOverview = () => {
+    if (!prefersReducedMotion() && focusMediaRef.current) {
+      stegoFlipStateRef.current = Flip.getState(focusMediaRef.current);
+    } else {
+      stegoFlipStateRef.current = null;
+    }
+    lastFocusedSchemeRef.current = focusedScheme;
+    prevFocusedSchemeRef.current = null;
+    setEmbedStage('overview');
   };
 
   const handleExtractFile = (file: File) => {
@@ -390,6 +733,12 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       ) ?? selectedSample
     );
   }, [embedResult, samples, selectedSample]);
+
+  const isCompose = embedStage === 'compose';
+  const displaySample = isCompose ? selectedSample : activeCoverSample;
+  const coverMotif = embedResult?.motif ?? displaySample?.motif ?? '';
+  const coverFilename = embedResult?.filename ?? displaySample?.filename ?? '';
+  const activePayloadBytes = embedResult?.payload_bytes ?? payloadBytes;
 
   return (
     <div className="min-h-dvh bg-[#F6F4EF] text-[#111110]">
@@ -448,7 +797,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                     ? 'bg-[#15803D]'
                     : healthOffline
                       ? 'bg-[#B45309]'
-                      : 'animate-pulse bg-[#6B665C]'
+                      : 'motion-safe:animate-pulse bg-[#6B665C]'
                 }`}
               />
               <span>{health ? 'API ok' : healthOffline ? 'offline' : 'checking'}</span>
@@ -470,315 +819,219 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       </header>
 
       <div ref={stageRef}>
-        {activeMode === 'embed' && embedStage === 'compose' && (
-          <main className="flex h-[calc(100dvh-3.5rem)] flex-col items-center justify-center gap-4 overflow-hidden px-4 py-4 sm:gap-5 sm:px-6">
-            {/* 1. Top — Compact Horizontal Sample Slider */}
-            <div className="compose-chrome w-full max-w-[560px]">
-              {samplesLoading ? (
-                <div className="flex items-center justify-center gap-2 py-2">
-                  {Array.from({ length: 8 }).map((_, idx) => (
-                    <div
-                      key={idx}
-                      className="h-11 w-11 shrink-0 animate-pulse rounded-lg border border-[#E4DFD3] bg-[#FDFCF9]"
-                    />
-                  ))}
-                </div>
-              ) : samplesError ? (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-[#B45309]/35 bg-[#B45309]/[0.06] px-3.5 py-2 text-xs text-[#111110]">
-                  <span className="truncate">{samplesError}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSamplesLoading(true);
-                      setSamplesError(null);
-                      void loadCatalogAndHealth();
-                    }}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#E4DFD3] bg-[#FDFCF9] px-2.5 py-1 font-medium hover:border-[#111110]"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    <span>Retry</span>
-                  </button>
-                </div>
+        {activeMode === 'embed' && (
+          <main
+            className={
+              isCompose
+                ? 'flex h-[calc(100dvh-3.5rem)] w-full flex-col overflow-hidden'
+                : 'grid min-h-[calc(100dvh-3.5rem)] w-full grid-cols-1 lg:h-[calc(100dvh-3.5rem)] lg:grid-cols-2 lg:overflow-hidden'
+            }
+          >
+            {/* Left / Center Hero Pane — Keeps sampleFrameRef mounted across all 3 stages */}
+            <section
+              key="hero-pane"
+              className={
+                isCompose
+                  ? 'flex h-full min-h-0 w-full flex-col items-center justify-between overflow-hidden'
+                  : 'flex min-h-0 w-full flex-col justify-between overflow-hidden border-b border-[#E4DFD3] bg-[#F6F4EF] p-4 sm:p-5 lg:h-full lg:border-r lg:border-b-0 lg:p-7'
+              }
+            >
+              {isCompose ? (
+                <TopSampleSlider
+                  key="compose-slider"
+                  samples={orderedSamples}
+                  selectedSampleKey={selectedSampleKey}
+                  samplesLoading={samplesLoading}
+                  samplesError={samplesError}
+                  disabled={isTransitioningOut || isEmbedding}
+                  onSelectSample={(sample) => setSelectedSample(sample)}
+                  onRetry={() => {
+                    setSamplesLoading(true);
+                    setSamplesError(null);
+                    void loadCatalogAndHealth();
+                  }}
+                />
               ) : (
-                <div className="flex items-center gap-1.5">
+                <div
+                  key="split-top-bar"
+                  className="split-left-chrome flex shrink-0 items-center justify-between gap-2"
+                >
                   <button
                     type="button"
-                    aria-label="Scroll samples left"
-                    onClick={() => handleScrollSlider(-1)}
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E4DFD3] bg-[#FDFCF9] text-[#6B665C] transition-colors hover:border-[#9A6B2F] hover:text-[#111110]"
+                    onClick={handleBackToCompose}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#E4DFD3] bg-[#FDFCF9] px-3.5 py-1.5 text-xs font-medium text-[#111110] transition-colors hover:border-[#111110]"
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>New Embed</span>
                   </button>
 
-                  <div
-                    ref={sliderRef}
-                    role="listbox"
-                    aria-label="Batik cover samples"
-                    className="no-scrollbar flex flex-1 items-center gap-2 overflow-x-auto scroll-smooth px-1.5 py-2"
-                  >
-                    {orderedSamples.map((sample) => {
-                      const key = sampleKey(sample);
-                      const selected = key === selectedSampleKey;
-                      return (
-                        <button
-                          key={key}
-                          ref={(el) => {
-                            if (el) {
-                              thumbRefs.current.set(key, el);
-                            } else {
-                              thumbRefs.current.delete(key);
-                            }
-                          }}
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          aria-label={`Select ${sample.filename}`}
-                          title={`${sample.motif} · ${sample.filename}`}
-                          onClick={() => setSelectedSample(sample)}
-                          className={`relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-[#FDFCF9] transition-all duration-200 focus:outline-none ${
-                            selected
-                              ? 'scale-105 ring-2 ring-[#9A6B2F] ring-offset-2 ring-offset-[#F6F4EF]'
-                              : 'opacity-80 ring-1 ring-[#E4DFD3] hover:opacity-100 hover:ring-[#9A6B2F]/60'
-                          }`}
-                        >
-                          <img
-                            src={sample.image_url}
-                            alt={`${sample.motif} ${sample.filename}`}
-                            loading="lazy"
-                            className="h-full w-full object-cover"
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    type="button"
-                    aria-label="Scroll samples right"
-                    onClick={() => handleScrollSlider(1)}
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E4DFD3] bg-[#FDFCF9] text-[#6B665C] transition-colors hover:border-[#9A6B2F] hover:text-[#111110]"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  <span className="font-mono-tabular text-[10px] font-medium uppercase tracking-[0.16em] text-[#9A6B2F]">
+                    Original Cover
+                  </span>
                 </div>
               )}
-            </div>
 
-            {/* 2. Center — Big Hero Image of Selected Sample */}
-            <div className="flex flex-col items-center">
+              {/* Persistent Hero Cover Element (ZERO unmount across compose -> overview -> focus) */}
               <div
-                ref={heroFrameRef}
-                className="relative aspect-square w-[clamp(220px,38vh,360px)] overflow-hidden rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] shadow-[0_24px_60px_-32px_rgba(17,17,16,0.28)] will-change-transform"
+                key="hero-center-slot"
+                className="flex min-h-0 w-full flex-1 flex-col items-center justify-center px-4 py-2"
               >
-                {selectedSample ? (
-                  <img
-                    ref={heroImgRef}
-                    src={selectedSample.image_url}
-                    alt={`${selectedSample.motif} ${selectedSample.filename}`}
-                    className="h-full w-full object-cover will-change-transform"
-                  />
-                ) : (
-                  <div className="h-full w-full animate-pulse bg-[#EFECE3]" />
+                <div
+                  ref={sampleFrameRef}
+                  data-flip-id="hero-sample"
+                  className={`relative aspect-square max-h-full overflow-hidden rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] shadow-[0_24px_60px_-32px_rgba(17,17,16,0.28)] will-change-transform ${
+                    isCompose
+                      ? 'w-[clamp(200px,36vh,340px)]'
+                      : 'w-[clamp(220px,44vh,420px)]'
+                  }`}
+                >
+                  {displaySample ? (
+                    <img
+                      ref={heroImgRef}
+                      src={displaySample.image_url}
+                      alt={`${displaySample.motif} ${displaySample.filename}`}
+                      className="h-full w-full object-cover will-change-transform"
+                    />
+                  ) : (
+                    <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
+                  )}
+                </div>
+
+                {isCompose && displaySample && (
+                  <div className="compose-hero-caption mt-2.5 inline-flex items-center rounded-full border border-[#E4DFD3] bg-[#FDFCF9]/90 px-2.5 py-0.5 font-mono-tabular text-[11px] text-[#6B665C]">
+                    {displaySample.filename}
+                  </div>
                 )}
               </div>
 
-              {selectedSample && (
-                <div className="compose-chrome mt-2.5 inline-flex items-center rounded-full border border-[#E4DFD3] bg-[#FDFCF9]/90 px-2.5 py-0.5 font-mono-tabular text-[11px] text-[#6B665C]">
-                  {selectedSample.filename}
-                </div>
-              )}
-            </div>
-
-            {/* 3. Bottom — Minimal Message Field + Presets + Embed CTA */}
-            <div className="compose-chrome w-full max-w-[520px]">
-              <textarea
-                id="hifi-payload-input"
-                rows={2}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Write a secret message..."
-                aria-label="Secret message"
-                className="w-full resize-none rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-3.5 py-2.5 text-xs leading-relaxed text-[#111110] placeholder:text-[#6B665C]/65 transition-colors focus:border-[#9A6B2F] focus:outline-none sm:text-[13px]"
-              />
-
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {PAYLOAD_PRESETS.map((preset) => {
-                    const activePreset = payloadBytes === preset.bytes;
-                    return (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        disabled={isEmbedding}
-                        onClick={() => setMessage(generateDeterministicPayload(preset.bytes))}
-                        className={`rounded-full border px-2.5 py-1 font-mono-tabular text-[11px] font-medium transition-colors disabled:opacity-50 ${
-                          activePreset
-                            ? 'border-[#9A6B2F] bg-[#FDFCF9] text-[#9A6B2F]'
-                            : 'border-[#E4DFD3] bg-[#FDFCF9] text-[#111110] hover:border-[#9A6B2F]'
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    );
-                  })}
-
-                  <span className="ml-1 font-mono-tabular text-[11px] text-[#6B665C]">
-                    {formatBytes(payloadBytes)}
-                  </span>
-
-                  {s1Overflow && (
-                    <span
-                      className="rounded-full border border-[#B45309]/35 bg-[#B45309]/10 px-2 py-0.5 font-mono-tabular text-[10px] font-medium text-[#B45309]"
-                      title={
-                        s1Max !== null
-                          ? `Exceeds Scheme 1 max (${formatBytes(s1Max)}); Scheme 2 & 3 embed cleanly`
-                          : 'Exceeds Scheme 1 max capacity'
-                      }
-                    >
-                      S1 overflow
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => void handleEmbed()}
-                  disabled={!selectedSample || isEmbedding}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#111110] px-5 py-2 text-xs font-semibold tracking-wide text-[#FDFCF9] transition-all hover:bg-[#9A6B2F] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-[#D5CEBE] disabled:text-[#6B665C]"
-                >
-                  {isEmbedding ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Embedding…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Embed to Stego</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {embedError && (
-                <p className="mt-2 truncate rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800">
-                  {embedError}
-                </p>
-              )}
-            </div>
-          </main>
-        )}
-
-        {activeMode === 'embed' && embedStage === 'split' && embedResult && (
-          <main className="mx-auto grid max-w-[1440px] grid-cols-1 lg:h-[calc(100dvh-3.5rem)] lg:grid-cols-2 lg:overflow-hidden">
-            <section className="split-cover-frame flex flex-col justify-between border-b border-[#E4DFD3] bg-[#F6F4EF] p-5 will-change-transform lg:h-[calc(100dvh-3.5rem)] lg:border-r lg:border-b-0 lg:p-7">
-              <div className="split-chrome flex flex-wrap items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={handleBackToCompose}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[#E4DFD3] bg-[#FDFCF9] px-3.5 py-1.5 text-xs font-medium text-[#111110] transition-colors hover:border-[#111110]"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  <span>New Embed</span>
-                </button>
-
+              {isCompose ? (
                 <div
-                  className="inline-flex rounded-full border border-[#E4DFD3] bg-[#FDFCF9] p-0.5"
-                  role="group"
-                  aria-label="Stego comparison view mode"
+                  key="compose-bottom"
+                  className="compose-bottom-composer w-full max-w-[520px] shrink-0 px-4 pb-5"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('stego')}
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      viewMode === 'stego'
-                        ? 'bg-[#111110] text-[#FDFCF9]'
-                        : 'text-[#6B665C] hover:text-[#111110]'
-                    }`}
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    <span>Stego Image</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('heatmap')}
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      viewMode === 'heatmap'
-                        ? 'bg-[#111110] text-[#FDFCF9]'
-                        : 'text-[#6B665C] hover:text-[#111110]'
-                    }`}
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    <span>×20 Diff Heatmap</span>
-                  </button>
-                </div>
-              </div>
+                  <textarea
+                    id="hifi-payload-input"
+                    rows={2}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    disabled={isTransitioningOut || isEmbedding}
+                    placeholder="Write a secret message..."
+                    aria-label="Secret message"
+                    className="w-full resize-none rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-3.5 py-2.5 text-xs leading-relaxed text-[#111110] placeholder:text-[#6B665C]/65 transition-colors focus:border-[#9A6B2F] focus:outline-none disabled:opacity-70 sm:text-[13px]"
+                  />
 
-              <div className="my-5 flex flex-1 items-center justify-center">
-                <figure
-                  ref={splitCoverFrameRef}
-                  className="w-full max-w-[420px] rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] p-4 shadow-[0_20px_50px_-34px_rgba(17,17,16,0.28)] will-change-transform"
-                >
-                  <div className="overflow-hidden rounded-xl border border-[#E4DFD3] bg-[#F6F4EF]">
-                    {activeCoverSample ? (
-                      <img
-                        src={activeCoverSample.image_url}
-                        alt={`${embedResult.motif} ${embedResult.filename} original cover`}
-                        className="aspect-square w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex aspect-square items-center justify-center text-xs text-[#6B665C]">
-                        Cover preview unavailable
-                      </div>
-                    )}
+                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {PAYLOAD_PRESETS.map((preset) => {
+                        const activePreset = payloadBytes === preset.bytes;
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            disabled={isEmbedding || isTransitioningOut}
+                            onClick={() => setMessage(generateDeterministicPayload(preset.bytes))}
+                            className={`rounded-full border px-2.5 py-1 font-mono-tabular text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                              activePreset
+                                ? 'border-[#9A6B2F] bg-[#FDFCF9] text-[#9A6B2F]'
+                                : 'border-[#E4DFD3] bg-[#FDFCF9] text-[#111110] hover:border-[#9A6B2F]'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+
+                      <span className="ml-1 font-mono-tabular text-[11px] text-[#6B665C]">
+                        {formatBytes(payloadBytes)}
+                      </span>
+
+                      {s1Overflow && (
+                        <span
+                          className="rounded-full border border-[#B45309]/35 bg-[#B45309]/10 px-2 py-0.5 font-mono-tabular text-[10px] font-medium text-[#B45309]"
+                          title={
+                            s1Max !== null
+                              ? `Exceeds Scheme 1 max (${formatBytes(s1Max)}); Scheme 2 & 3 embed cleanly`
+                              : 'Exceeds Scheme 1 max capacity'
+                          }
+                        >
+                          S1 overflow
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleEmbed}
+                      disabled={!selectedSample || isEmbedding || isTransitioningOut}
+                      className="inline-flex items-center gap-2 rounded-full bg-[#111110] px-5 py-2 text-xs font-semibold tracking-wide text-[#FDFCF9] transition-colors hover:bg-[#9A6B2F] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-[#D5CEBE] disabled:text-[#6B665C]"
+                    >
+                      {isEmbedding || isTransitioningOut ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Embedding…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>Embed to Stego</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <figcaption className="split-chrome mt-3 flex items-baseline justify-between gap-2 border-t border-[#E4DFD3] pt-2.5">
-                    <div>
-                      <div className="font-mono-tabular text-[10px] uppercase tracking-[0.16em] text-[#9A6B2F]">
-                        Original Cover Plate
-                      </div>
-                      <div className="font-editorial text-xl text-[#111110]">
-                        <span className="capitalize">{embedResult.motif}</span> /{' '}
-                        <span className="font-mono-tabular text-sm">{embedResult.filename}</span>
-                      </div>
-                    </div>
-                    <div className="text-right font-mono-tabular text-[11px] text-[#6B665C]">
-                      <div>
-                        {activeCoverSample
-                          ? `${activeCoverSample.width} × ${activeCoverSample.height} RGB`
-                          : '512 × 512 RGB'}
-                      </div>
-                      <div className="font-semibold text-[#111110]">
-                        {formatBytes(embedResult.payload_bytes)}
-                      </div>
-                    </div>
-                  </figcaption>
-                </figure>
-              </div>
 
-              <div className="split-chrome flex flex-wrap items-center justify-between gap-2 border-t border-[#E4DFD3] pt-3 font-mono-tabular text-[11px] text-[#6B665C]">
-                <span>3-Scheme Blind PVDM Evaluation</span>
-                <span>
-                  Viewing:{' '}
-                  <strong className="text-[#111110]">
-                    {viewMode === 'stego' ? 'Lossless Stego PNG' : '|Cover − Stego| × 20'}
-                  </strong>
-                </span>
-              </div>
+                  {embedError && (
+                    <p className="mt-2 truncate rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800">
+                      {embedError}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div
+                  key="split-footer"
+                  className="split-left-chrome flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[#E4DFD3] pt-3 font-mono-tabular text-[11px] text-[#6B665C]"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-editorial text-base capitalize text-[#111110]">
+                      {coverMotif}
+                    </span>
+                    <span>/</span>
+                    <span className="text-[#111110]">{coverFilename}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span>
+                      {displaySample
+                        ? `${displaySample.width} × ${displaySample.height} RGB`
+                        : '512 × 512 RGB'}
+                    </span>
+                    <span className="font-semibold text-[#111110]">
+                      {formatBytes(activePayloadBytes)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </section>
 
-            <section className="gallery-scroll space-y-4 p-5 lg:h-[calc(100dvh-3.5rem)] lg:overflow-y-auto lg:p-7">
-              {embedResult.results.map((res) => (
-                <SchemeResultCard
-                  key={res.scheme}
-                  motif={embedResult.motif}
-                  payloadBytes={embedResult.payload_bytes}
-                  result={res}
-                  viewMode={viewMode}
-                  onExtractFile={handleExtractFile}
-                />
-              ))}
-            </section>
+            {/* Right 50% Pane: Stage 2 (overview) or Stage 3 (focus) */}
+            {embedStage === 'overview' && (
+              <StegoOverviewPane
+                embedResult={embedResult}
+                isEmbedding={isEmbedding}
+                onSelectScheme={handleSelectOverviewScheme}
+              />
+            )}
+
+            {embedStage === 'focus' && embedResult && focusedScheme && (
+              <StegoFocusPane
+                embedResult={embedResult}
+                focusedScheme={focusedScheme}
+                viewMode={viewMode}
+                focusMediaRef={focusMediaRef}
+                onSwitchScheme={handleSwitchFocusedScheme}
+                onShowAll={handleReturnToOverview}
+                onChangeViewMode={setViewMode}
+                onExtractFile={handleExtractFile}
+              />
+            )}
           </main>
         )}
 
