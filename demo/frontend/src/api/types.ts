@@ -73,6 +73,18 @@ export interface CalculationStep {
   fobp_triggered?: boolean;
 }
 
+export interface RowTraceEntry {
+  row: number;
+  pairs_processed: number;
+  bits_embedded: number;
+  cumulative_bits: number;
+  total_payload_bits: number;
+  avg_diff: number;
+  fobp_count: number;
+  channels: Array<'R' | 'G' | 'B'>;
+  sample_steps: CalculationStep[];
+}
+
 export interface SchemeAnalysis {
   width: number;
   height: number;
@@ -92,11 +104,11 @@ export type EmbedStreamEvent =
       capacity: CapacitySummary;
     }
   | {
-      type: 'scheme_step';
+      type: 'scheme_row';
       scheme: SchemeName;
-      step_index: number;
-      total_steps: number;
-      step: CalculationStep;
+      row_index: number;
+      total_rows: number;
+      row: RowTraceEntry;
     }
   | {
       type: 'scheme_result';
@@ -116,8 +128,8 @@ export interface SchemeLiveState {
   scheme: SchemeName;
   status: LiveSchemeStatus;
   analysis: SchemeAnalysis | null;
-  steps: CalculationStep[];
-  totalSteps: number;
+  rows: RowTraceEntry[];
+  totalRows: number;
   result: SchemeEmbedResult | null;
   pendingStegoBase64: string | null;
   errorMessage: string | null;

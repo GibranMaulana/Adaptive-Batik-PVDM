@@ -4,10 +4,10 @@ import gsap from 'gsap';
 import { AlertCircle, ArrowUpRight, Loader2, Sparkles } from 'lucide-react';
 import { embedPayloadStream, fetchHealth, fetchSamples } from '../api/client';
 import type {
-  CalculationStep,
   EmbedStreamEvent,
   HealthResponse,
   LiveSchemeStatus,
+  RowTraceEntry,
   SampleSummary,
   SchemeEmbedResult,
   SchemeLiveState,
@@ -38,9 +38,11 @@ interface HiFiConverterProps {
 }
 
 interface SchemeQueue {
-  steps: Array<{ step: CalculationStep; totalSteps: number }>;
+  rows: Array<{ row: RowTraceEntry; totalRows: number }>;
   pendingResult: SchemeEmbedResult | null;
-  timerId: number | null;
+  rafId: number | null;
+  lastFlushAt: number;
+  knownTotalRows: number;
 }
 
 const FEATURED_ORDER = ['parang_01.png', 'kawung_01.png', 'megamendung_01.png'] as const;
@@ -91,8 +93,8 @@ function createInitialSchemeStates(): Record<SchemeName, SchemeLiveState> {
       scheme: 'scheme1',
       status: 'processing',
       analysis: null,
-      steps: [],
-      totalSteps: 0,
+      rows: [],
+      totalRows: 0,
       result: null,
       pendingStegoBase64: null,
       errorMessage: null,
@@ -101,8 +103,8 @@ function createInitialSchemeStates(): Record<SchemeName, SchemeLiveState> {
       scheme: 'scheme2',
       status: 'processing',
       analysis: null,
-      steps: [],
-      totalSteps: 0,
+      rows: [],
+      totalRows: 0,
       result: null,
       pendingStegoBase64: null,
       errorMessage: null,
@@ -111,8 +113,8 @@ function createInitialSchemeStates(): Record<SchemeName, SchemeLiveState> {
       scheme: 'scheme3',
       status: 'processing',
       analysis: null,
-      steps: [],
-      totalSteps: 0,
+      rows: [],
+      totalRows: 0,
       result: null,
       pendingStegoBase64: null,
       errorMessage: null,
@@ -122,9 +124,25 @@ function createInitialSchemeStates(): Record<SchemeName, SchemeLiveState> {
 
 function createEmptyQueues(): Record<SchemeName, SchemeQueue> {
   return {
-    scheme1: { steps: [], pendingResult: null, timerId: null },
-    scheme2: { steps: [], pendingResult: null, timerId: null },
-    scheme3: { steps: [], pendingResult: null, timerId: null },
+    scheme1: { rows: [], pendingResult: null, rafId: null, lastFlushAt: 0, knownTotalRows: 0 },
+    scheme2: { rows: [], pendingResult: null, rafId: null, lastFlushAt: 0, knownTotalRows: 0 },
+    scheme3: { rows: [], pendingResult: null, rafId: null, lastFlushAt: 0, knownTotalRows: 0 },
+  };
+}
+
+function getAdaptivePacing(totalRows: number): { intervalMs: number; batchSize: number } {
+  if (totalRows <= 10) {
+    return { intervalMs: 120, batchSize: 1 };
+  }
+  if (totalRows <= 60) {
+    return { intervalMs: 35, batchSize: 1 };
+  }
+  if (totalRows <= 180) {
+    return { intervalMs: Math.max(16, Math.round(2200 / totalRows)), batchSize: 1 };
+  }
+  return {
+    intervalMs: 18,
+    batchSize: Math.max(2, Math.min(4, Math.ceil(totalRows / 150))),
   };
 }
 
@@ -169,6 +187,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const [embedError, setEmbedError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ComparisonViewMode>('stego');
   const [hasPendingPacing, setHasPendingPacing] = useState(false);
+  const [embedRunId, setEmbedRunId] = useState(0);
 
   const [schemeStates, setSchemeStates] = useState<Record<SchemeName, SchemeLiveState>>(
     createInitialSchemeStates,
@@ -187,12 +206,14 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const clearAllQueueTimers = useCallback(() => {
     for (const scheme of ALL_SCHEMES) {
       const queue = queuesRef.current[scheme];
-      if (queue.timerId !== null) {
-        window.clearTimeout(queue.timerId);
-        queue.timerId = null;
+      if (queue.rafId !== null) {
+        window.cancelAnimationFrame(queue.rafId);
+        queue.rafId = null;
       }
-      queue.steps = [];
+      queue.rows = [];
       queue.pendingResult = null;
+      queue.lastFlushAt = 0;
+      queue.knownTotalRows = 0;
     }
     setHasPendingPacing(false);
   }, []);
@@ -219,10 +240,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     const queues = queuesRef.current;
     return () => {
       for (const scheme of ALL_SCHEMES) {
-        const timerId = queues[scheme].timerId;
-        if (timerId !== null) {
-          window.clearTimeout(timerId);
-          queues[scheme].timerId = null;
+        const rafId = queues[scheme].rafId;
+        if (rafId !== null) {
+          window.cancelAnimationFrame(rafId);
+          queues[scheme].rafId = null;
         }
       }
     };
@@ -231,7 +252,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const refreshPendingPacingFlag = useCallback(() => {
     const pending = ALL_SCHEMES.some(
       (scheme) =>
-        queuesRef.current[scheme].steps.length > 0 ||
+        queuesRef.current[scheme].rows.length > 0 ||
         queuesRef.current[scheme].pendingResult !== null,
     );
     setHasPendingPacing(pending);
@@ -460,56 +481,78 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     { scope: stageRef, dependencies: [activeMode, embedStage] },
   );
 
-  // Per-scheme non-blocking pacing drain
+  // Per-scheme non-blocking requestAnimationFrame row pacing
   const scheduleSchemeDrain = useCallback(
     function drainScheme(scheme: SchemeName, reqId: number) {
       const queue = queuesRef.current[scheme];
-      if (queue.timerId !== null) return;
+      if (queue.rafId !== null) return;
 
-      const stepDelay =
-        queue.steps.length > 32 ? Math.max(16, Math.floor(1200 / queue.steps.length)) : 45;
-
-      queue.timerId = window.setTimeout(() => {
-        queue.timerId = null;
+      const tick = (now: number) => {
+        queue.rafId = null;
         if (embedRequestIdRef.current !== reqId) return;
 
-        const nextItem = queue.steps.shift();
-        const finishedAllQueuedSteps = queue.steps.length === 0;
-        const resultToApply = finishedAllQueuedSteps ? queue.pendingResult : null;
-        if (resultToApply) {
-          queue.pendingResult = null;
-        }
+        const effectiveTotal = Math.max(queue.knownTotalRows, queue.rows.length, 1);
+        const { intervalMs, batchSize } = getAdaptivePacing(effectiveTotal);
 
-        if (nextItem || resultToApply) {
+        const hasRows = queue.rows.length > 0;
+        const readyForNextFlush = queue.lastFlushAt === 0 || now - queue.lastFlushAt >= intervalMs;
+
+        if (hasRows && readyForNextFlush) {
+          queue.lastFlushAt = now;
+          const batch = queue.rows.splice(0, batchSize);
+          const finishedAllQueuedRows = queue.rows.length === 0;
+          const resultToApply = finishedAllQueuedRows ? queue.pendingResult : null;
+          if (resultToApply) {
+            queue.pendingResult = null;
+          }
+
           setSchemeStates((prev) => {
             const current = prev[scheme];
-            const nextSteps = nextItem ? [...current.steps, nextItem.step] : current.steps;
-            const nextTotal = nextItem ? nextItem.totalSteps : current.totalSteps;
+            const addedRows = batch.map((item) => item.row);
+            const lastTotal = batch[batch.length - 1]?.totalRows ?? current.totalRows;
 
             return {
               ...prev,
               [scheme]: {
                 ...current,
-                steps: nextSteps,
-                totalSteps: nextTotal,
+                rows: [...current.rows, ...addedRows],
+                totalRows: Math.max(current.totalRows, lastTotal),
                 ...(resultToApply
                   ? {
                       status: mapResultStatus(resultToApply.status),
                       result: resultToApply,
+                      pendingStegoBase64:
+                        resultToApply.stego_png_base64 ?? current.pendingStegoBase64,
                       errorMessage: resultToApply.error,
                     }
                   : {}),
               },
             };
           });
+        } else if (!hasRows && queue.pendingResult !== null) {
+          const resultToApply = queue.pendingResult;
+          queue.pendingResult = null;
+          setSchemeStates((prev) => ({
+            ...prev,
+            [scheme]: {
+              ...prev[scheme],
+              status: mapResultStatus(resultToApply.status),
+              result: resultToApply,
+              pendingStegoBase64:
+                resultToApply.stego_png_base64 ?? prev[scheme].pendingStegoBase64,
+              errorMessage: resultToApply.error,
+            },
+          }));
         }
 
-        if (queue.steps.length > 0 || queue.pendingResult !== null) {
-          drainScheme(scheme, reqId);
+        if (queue.rows.length > 0 || queue.pendingResult !== null) {
+          queue.rafId = window.requestAnimationFrame(tick);
         } else {
           refreshPendingPacingFlag();
         }
-      }, stepDelay);
+      };
+
+      queue.rafId = window.requestAnimationFrame(tick);
     },
     [refreshPendingPacingFlag],
   );
@@ -517,23 +560,31 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const handleSkipPacing = useCallback(() => {
     skipPacingRef.current = true;
 
-    const drained: Partial<Record<SchemeName, { steps: CalculationStep[]; totalSteps: number; result: SchemeEmbedResult | null }>> = {};
+    const drained: Partial<
+      Record<
+        SchemeName,
+        { rows: RowTraceEntry[]; totalRows: number; result: SchemeEmbedResult | null }
+      >
+    > = {};
     for (const scheme of ALL_SCHEMES) {
       const queue = queuesRef.current[scheme];
-      if (queue.timerId !== null) {
-        window.clearTimeout(queue.timerId);
-        queue.timerId = null;
+      if (queue.rafId !== null) {
+        window.cancelAnimationFrame(queue.rafId);
+        queue.rafId = null;
       }
-      if (queue.steps.length > 0 || queue.pendingResult !== null) {
+      if (queue.rows.length > 0 || queue.pendingResult !== null) {
         const lastTotal =
-          queue.steps.length > 0 ? queue.steps[queue.steps.length - 1].totalSteps : 0;
+          queue.rows.length > 0
+            ? queue.rows[queue.rows.length - 1].totalRows
+            : queue.knownTotalRows;
         drained[scheme] = {
-          steps: queue.steps.map((item) => item.step),
-          totalSteps: lastTotal,
+          rows: queue.rows.map((item) => item.row),
+          totalRows: lastTotal,
           result: queue.pendingResult,
         };
-        queue.steps = [];
+        queue.rows = [];
         queue.pendingResult = null;
+        queue.lastFlushAt = 0;
       }
     }
 
@@ -545,12 +596,14 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         const current = prev[scheme];
         next[scheme] = {
           ...current,
-          steps: [...current.steps, ...patch.steps],
-          totalSteps: Math.max(current.totalSteps, patch.totalSteps),
+          rows: [...current.rows, ...patch.rows],
+          totalRows: Math.max(current.totalRows, patch.totalRows),
           ...(patch.result
             ? {
                 status: mapResultStatus(patch.result.status),
                 result: patch.result,
+                pendingStegoBase64:
+                  patch.result.stego_png_base64 ?? current.pendingStegoBase64,
                 errorMessage: patch.result.error,
               }
             : {}),
@@ -591,20 +644,22 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         return;
       }
 
-      if (event.type === 'scheme_step') {
+      if (event.type === 'scheme_row') {
         if (prefersReducedMotion() || skipPacingRef.current) {
           setSchemeStates((prev) => ({
             ...prev,
             [scheme]: {
               ...prev[scheme],
-              steps: [...prev[scheme].steps, event.step],
-              totalSteps: event.total_steps,
+              rows: [...prev[scheme].rows, event.row],
+              totalRows: Math.max(prev[scheme].totalRows, event.total_rows),
             },
           }));
         } else {
-          queuesRef.current[scheme].steps.push({
-            step: event.step,
-            totalSteps: event.total_steps,
+          const queue = queuesRef.current[scheme];
+          queue.knownTotalRows = Math.max(queue.knownTotalRows, event.total_rows);
+          queue.rows.push({
+            row: event.row,
+            totalRows: event.total_rows,
           });
           setHasPendingPacing(true);
           scheduleSchemeDrain(scheme, reqId);
@@ -614,9 +669,9 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
       if (event.type === 'scheme_result') {
         const queue = queuesRef.current[scheme];
-        const hasQueuedSteps = queue.steps.length > 0;
+        const hasQueuedRows = queue.rows.length > 0;
 
-        if (!hasQueuedSteps || prefersReducedMotion() || skipPacingRef.current) {
+        if (!hasQueuedRows || prefersReducedMotion() || skipPacingRef.current) {
           setSchemeStates((prev) => ({
             ...prev,
             [scheme]: {
@@ -628,7 +683,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
             },
           }));
         } else {
-          // Give PixelRasterCanvas the real stego buffer while remaining steps tick out
+          // Give PixelRasterCanvas the real stego buffer while remaining rows tick out
           if (event.result.stego_png_base64) {
             setSchemeStates((prev) => ({
               ...prev,
@@ -660,6 +715,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
     setEmbedError(null);
     setViewMode('stego');
+    setEmbedRunId((prev) => prev + 1);
     setSchemeStates(createInitialSchemeStates());
     setActiveRunMeta({
       motif: selectedSample.motif,
@@ -694,7 +750,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         setEmbedError(messageText);
 
         if (!receivedAnyStreamEventRef.current) {
-          exitTimelineRef.current?.kill();
+          exitTimelineRef.current?.revert();
           exitTimelineRef.current = null;
           setIsTransitioningOut(false);
           setEmbedStage('compose');
@@ -1018,6 +1074,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
             {/* Top Row: 4-Image Comparison Layout */}
             <FourImageComparison
+              key={`comparison-${embedRunId}`}
               coverImageUrl={activeRunMeta.imageUrl}
               motif={activeRunMeta.motif}
               filename={activeRunMeta.filename}
@@ -1036,10 +1093,13 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
             {/* Bottom Row: 3 Independent Persistent Scrollable Calculation Log Panels */}
             <section
               aria-label="Per-scheme calculation logs"
-              className="mt-3.5 grid grid-cols-1 gap-3 lg:grid-cols-3"
+              className="mt-3.5 grid grid-cols-1 gap-3.5 lg:grid-cols-3"
             >
               {ALL_SCHEMES.map((schemeName) => (
-                <SchemeCalculationLog key={schemeName} state={schemeStates[schemeName]} />
+                <SchemeCalculationLog
+                  key={`${schemeName}-${embedRunId}`}
+                  state={schemeStates[schemeName]}
+                />
               ))}
             </section>
           </main>

@@ -10,6 +10,10 @@ interface PixelRasterCanvasProps {
   stegoBase64: string | null;
   width?: number;
   height?: number;
+  progress?: number;
+  showCursor?: boolean;
+  coverBackdropOpacity?: number;
+  rowScanlineOnly?: boolean;
   initialProgress?: number;
   initialShowCursor?: boolean;
   alt?: string;
@@ -29,6 +33,10 @@ export function PixelRasterCanvas({
   stegoBase64,
   width = 512,
   height = 512,
+  progress,
+  showCursor,
+  coverBackdropOpacity = 0.15,
+  rowScanlineOnly = false,
   initialProgress = 0,
   initialShowCursor = true,
   alt = 'Stego raster output',
@@ -38,15 +46,17 @@ export function PixelRasterCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ghostCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const activeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const coverCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const progressRef = useRef<number>(initialProgress);
-  const showCursorRef = useRef<boolean>(initialShowCursor);
+  const progressRef = useRef<number>(progress ?? initialProgress);
+  const showCursorRef = useRef<boolean>(showCursor ?? initialShowCursor);
+  const hasStegoRef = useRef<boolean>(Boolean(stegoBase64));
 
   const drawAtProgress = useCallback(
-    (progress: number, showCursor = true) => {
-      const clamped = Math.max(0, Math.min(1, progress));
+    (nextProgress: number, nextShowCursor = true) => {
+      const clamped = Math.max(0, Math.min(1, nextProgress));
       progressRef.current = clamped;
-      showCursorRef.current = showCursor;
+      showCursorRef.current = nextShowCursor;
 
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -57,7 +67,7 @@ export function PixelRasterCanvas({
       ctx.clearRect(0, 0, width, height);
 
       const ghostCanvas = ghostCanvasRef.current;
-      const activeCanvas = activeCanvasRef.current;
+      const activeCanvas = activeCanvasRef.current ?? coverCanvasRef.current;
 
       if (clamped >= 1 && activeCanvas) {
         ctx.drawImage(activeCanvas, 0, 0, width, height);
@@ -76,19 +86,46 @@ export function PixelRasterCanvas({
       }
 
       const totalPixels = width * height;
-      const pixelCount = Math.floor(clamped * totalPixels);
+      const pixelCount = Math.round(clamped * totalPixels);
       const fullRows = Math.floor(pixelCount / width);
       const activeCol = pixelCount % width;
 
       if (fullRows > 0) {
-        ctx.drawImage(activeCanvas, 0, 0, width, fullRows, 0, 0, width, fullRows);
+        const clampedRows = Math.min(height, fullRows);
+        ctx.drawImage(activeCanvas, 0, 0, width, clampedRows, 0, 0, width, clampedRows);
       }
 
       if (fullRows < height && activeCol > 0) {
         ctx.drawImage(activeCanvas, 0, fullRows, activeCol, 1, 0, fullRows, activeCol, 1);
       }
 
-      if (showCursor && fullRows < height) {
+      if (!nextShowCursor) {
+        return;
+      }
+
+      if (rowScanlineOnly) {
+        if (fullRows <= 0 || fullRows > height) return;
+        const scanRow = activeCol > 0 ? Math.min(height - 1, fullRows) : Math.max(0, fullRows - 1);
+
+        ctx.save();
+        // Soft sogan-gold glow halo around the active raster row
+        ctx.fillStyle = 'rgba(154, 107, 47, 0.22)';
+        ctx.fillRect(0, Math.max(0, scanRow - 2), width, 5);
+
+        // Crisp sogan-gold active row scanline
+        ctx.fillStyle = '#9A6B2F';
+        ctx.fillRect(0, scanRow, width, 2);
+
+        // Subtle ivory sheen right above the active scanline
+        if (scanRow > 0) {
+          ctx.fillStyle = 'rgba(253, 252, 249, 0.55)';
+          ctx.fillRect(0, scanRow - 1, width, 1);
+        }
+        ctx.restore();
+        return;
+      }
+
+      if (fullRows < height) {
         ctx.save();
 
         // Subtle horizontal scanline guide on the active raster row
@@ -129,26 +166,33 @@ export function PixelRasterCanvas({
         ctx.restore();
       }
     },
-    [height, width],
+    [height, rowScanlineOnly, width],
   );
 
   useImperativeHandle(
     ref,
     () => ({
-      setProgress: (progress: number, showCursor = true) => {
-        drawAtProgress(progress, showCursor);
+      setProgress: (nextProgress: number, nextShowCursor = true) => {
+        drawAtProgress(nextProgress, nextShowCursor);
       },
     }),
     [drawAtProgress],
   );
 
-  // Decode cover image into faint 15% ghost backdrop (and active buffer when no stego PNG exists)
+  // Sync declarative progress/showCursor props when provided
+  useEffect(() => {
+    if (progress === undefined && showCursor === undefined) return;
+    drawAtProgress(
+      progress ?? progressRef.current,
+      showCursor ?? showCursorRef.current,
+    );
+  }, [drawAtProgress, progress, showCursor]);
+
+  // Decode cover image into backdrop ghost canvas + fallback active buffer
   useEffect(() => {
     let cancelled = false;
     ghostCanvasRef.current = null;
-    if (!stegoBase64) {
-      activeCanvasRef.current = null;
-    }
+    coverCanvasRef.current = null;
 
     if (!coverImageUrl) {
       drawAtProgress(progressRef.current, showCursorRef.current);
@@ -165,20 +209,22 @@ export function PixelRasterCanvas({
         gCtx.imageSmoothingEnabled = false;
         gCtx.fillStyle = '#FDFCF9';
         gCtx.fillRect(0, 0, width, height);
-        gCtx.globalAlpha = 0.15;
+        gCtx.globalAlpha = coverBackdropOpacity;
         gCtx.drawImage(img, 0, 0, width, height);
         gCtx.globalAlpha = 1;
         ghostCanvasRef.current = ghost;
       }
 
-      if (!stegoBase64) {
-        const fallbackActive = createOffscreenCanvas(width, height);
-        const aCtx = fallbackActive.getContext('2d');
-        if (aCtx) {
-          aCtx.imageSmoothingEnabled = false;
-          aCtx.drawImage(img, 0, 0, width, height);
-          activeCanvasRef.current = fallbackActive;
-        }
+      const coverFull = createOffscreenCanvas(width, height);
+      const cCtx = coverFull.getContext('2d');
+      if (cCtx) {
+        cCtx.imageSmoothingEnabled = false;
+        cCtx.drawImage(img, 0, 0, width, height);
+        coverCanvasRef.current = coverFull;
+      }
+
+      if (!hasStegoRef.current && !activeCanvasRef.current) {
+        activeCanvasRef.current = coverFull;
       }
 
       drawAtProgress(progressRef.current, showCursorRef.current);
@@ -188,16 +234,19 @@ export function PixelRasterCanvas({
     return () => {
       cancelled = true;
     };
-  }, [coverImageUrl, drawAtProgress, height, stegoBase64, width]);
+  }, [coverBackdropOpacity, coverImageUrl, drawAtProgress, height, width]);
 
   // Decode lossless stego PNG into offscreen canvas
   useEffect(() => {
     let cancelled = false;
+    hasStegoRef.current = Boolean(stegoBase64);
+
     if (!stegoBase64) {
+      activeCanvasRef.current = coverCanvasRef.current;
+      drawAtProgress(progressRef.current, showCursorRef.current);
       return;
     }
 
-    activeCanvasRef.current = null;
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
