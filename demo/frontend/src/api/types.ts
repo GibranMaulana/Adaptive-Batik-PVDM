@@ -59,6 +59,8 @@ export interface CalculationStep {
   channel: 'R' | 'G' | 'B';
   before: [number, number];
   after: [number, number];
+  rgb_before?: [[number, number, number], [number, number, number]];
+  rgb_after?: [[number, number, number], [number, number, number]];
   difference_before: number;
   difference_after: number;
   range: [number, number];

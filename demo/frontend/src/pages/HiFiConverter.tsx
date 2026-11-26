@@ -7,7 +7,6 @@ import type { EmbedResponse, HealthResponse, SampleSummary, SchemeName } from '.
 import { HiFiExtractor, type HiFiPreloadExtract } from '../components/hifi/HiFiExtractor';
 import type { GalleryViewMode } from '../components/hifi/SchemeResultCard';
 import { StegoFocusPane } from '../components/hifi/StegoFocusPane';
-import { LiveEmbeddingPane } from '../components/hifi/LiveEmbeddingPane';
 import { StegoOverviewPane } from '../components/hifi/StegoOverviewPane';
 import { TopSampleSlider } from '../components/hifi/TopSampleSlider';
 import {
@@ -21,7 +20,7 @@ import {
 gsap.registerPlugin(useGSAP);
 
 type ActiveMode = 'embed' | 'extract';
-type EmbedStage = 'compose' | 'live' | 'overview' | 'focus';
+type EmbedStage = 'compose' | 'overview' | 'focus';
 
 interface HiFiConverterProps {
   onNavigate: (path: string) => void;
@@ -85,7 +84,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
   const activeTimelineRef = useRef<gsap.core.Timeline | null>(null);
   const returningFromFocusRef = useRef(false);
-  const enteringOverviewFromLiveRef = useRef(false);
   const embedStageRef = useRef<EmbedStage>('compose');
 
   const coverReticleRef = useRef<HTMLDivElement | null>(null);
@@ -120,7 +118,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const [embedError, setEmbedError] = useState<string | null>(null);
   const [embedResult, setEmbedResult] = useState<EmbedResponse | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('stego');
-  const [liveSchemeIndex, setLiveSchemeIndex] = useState<number | null>(null);
+  const [hasCompletedRaster, setHasCompletedRaster] = useState(false);
 
   const [preloadExtract, setPreloadExtract] = useState<HiFiPreloadExtract | null>(null);
 
@@ -362,7 +360,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         (context) => {
           if (context.conditions?.reduceMotion) {
             returningFromFocusRef.current = false;
-            enteringOverviewFromLiveRef.current = false;
             return;
           }
 
@@ -431,42 +428,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 },
               },
             );
-          } else if (embedStage === 'overview' && enteringOverviewFromLiveRef.current) {
-            const overviewTl = gsap.timeline({
-              onComplete: () => {
-                if (!reverted) {
-                  enteringOverviewFromLiveRef.current = false;
-                }
-              },
-            });
-            overviewTl.fromTo(
-              '.stego-overview-slot',
-              { x: 28, autoAlpha: 0 },
-              {
-                x: 0,
-                autoAlpha: 1,
-                duration: 0.44,
-                stagger: 0.08,
-                ease: 'power3.out',
-                clearProps: 'transform,opacity,visibility',
-              },
-              0,
-            );
-            if (embedResult) {
-              overviewTl.fromTo(
-                '.stego-reveal-image',
-                { opacity: 0, scale: 0.98 },
-                {
-                  opacity: 1,
-                  scale: 1,
-                  duration: 0.42,
-                  stagger: 0.08,
-                  ease: 'power3.out',
-                  clearProps: 'transform,opacity',
-                },
-                0.06,
-              );
-            }
           }
 
           return () => {
@@ -481,43 +442,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     { scope: stageRef, dependencies: [activeMode, embedStage] },
   );
 
-  // 4. Fade stego images cleanly into the 3 overview slots when embedResult arrives directly in overview
-  useGSAP(
-    () => {
-      if (!embedResult || activeMode !== 'embed' || embedStage !== 'overview') return;
-      if (enteringOverviewFromLiveRef.current || returningFromFocusRef.current) return;
-
-      const mm = gsap.matchMedia();
-      mm.add(
-        {
-          isMotionOk: '(prefers-reduced-motion: no-preference)',
-          reduceMotion: '(prefers-reduced-motion: reduce)',
-        },
-        (context) => {
-          if (context.conditions?.reduceMotion) return;
-
-          gsap.fromTo(
-            '.stego-reveal-image',
-            { opacity: 0, scale: 0.98 },
-            {
-              opacity: 1,
-              scale: 1,
-              duration: 0.45,
-              stagger: 0.06,
-              ease: 'power3.out',
-              clearProps: 'transform,opacity',
-            },
-          );
-        },
-        stageRef,
-      );
-
-      return () => mm.revert();
-    },
-    { scope: stageRef, dependencies: [embedResult, embedStage] },
-  );
-
-  // 5. Crisp crossfade/slide when switching between 01 | 02 | 03 in focus stage
+  // 4. Crisp crossfade/slide when switching between 01 | 02 | 03 in focus stage
   useGSAP(
     () => {
       if (!focusedScheme) {
@@ -564,7 +489,13 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     activeTimelineRef.current?.kill();
     activeTimelineRef.current = null;
     returningFromFocusRef.current = false;
-    enteringOverviewFromLiveRef.current = false;
+
+    if (coverReticleRef.current) {
+      gsap.set(coverReticleRef.current, { autoAlpha: 0 });
+    }
+    if (coverScanlineRef.current) {
+      gsap.set(coverScanlineRef.current, { autoAlpha: 0 });
+    }
 
     if (clearError) {
       setEmbedError(null);
@@ -696,18 +627,16 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     embedRequestIdRef.current += 1;
     const reqId = embedRequestIdRef.current;
     const reduceMotion = prefersReducedMotion();
-    const targetStage: EmbedStage = reduceMotion ? 'overview' : 'live';
 
     setIsEmbedding(true);
     setEmbedError(null);
     setEmbedResult(null);
-    setLiveSchemeIndex(null);
+    setHasCompletedRaster(false);
     setFocusedScheme(null);
     prevFocusedSchemeRef.current = null;
     returningFromFocusRef.current = false;
-    enteringOverviewFromLiveRef.current = false;
-    embedStageRef.current = targetStage;
-    setEmbedStage(targetStage);
+    embedStageRef.current = 'overview';
+    setEmbedStage('overview');
 
     // Kick off API call immediately in parallel with the single-stage timeline
     embedPayload({
@@ -829,7 +758,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       0.62,
     );
 
-    // Step 3 (0.72s): Reveal right 50% pane in 'live' stage
+    // Step 3 (0.72s): Reveal right 50% pane directly in 'overview' stage
     if (rightPaneRef.current) {
       tl.fromTo(
         rightPaneRef.current,
@@ -847,18 +776,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     }
   };
 
-  const handleTransitionLiveToOverview = useCallback(() => {
-    if (embedStageRef.current !== 'live') return;
-    setLiveSchemeIndex(null);
-    enteringOverviewFromLiveRef.current = true;
-    embedStageRef.current = 'overview';
-    setEmbedStage('overview');
-  }, []);
-
   const handleBackToCompose = () => {
     embedRequestIdRef.current += 1;
     setIsEmbedding(false);
-    setLiveSchemeIndex(null);
+    setHasCompletedRaster(false);
     runBackToComposeAnimation(true);
   };
 
@@ -942,14 +863,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               type="button"
               role="tab"
               aria-selected={activeMode === 'extract'}
-              onClick={() => {
-                if (embedStageRef.current === 'live' && embedResult) {
-                  setLiveSchemeIndex(null);
-                  embedStageRef.current = 'overview';
-                  setEmbedStage('overview');
-                }
-                setActiveMode('extract');
-              }}
+              onClick={() => setActiveMode('extract')}
               className={`rounded-full px-3.5 py-1 text-xs font-medium transition-colors ${
                 activeMode === 'extract'
                   ? 'bg-[#111110] text-[#FDFCF9]'
@@ -1057,7 +971,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                     ) : (
                       <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
                     )}
-                    {embedStage === 'live' && (
+                    {embedStage === 'overview' && (
                       <>
                         <div
                           ref={coverScanlineRef}
@@ -1073,11 +987,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                           <span className="absolute right-0 bottom-0 h-2.5 w-2.5 border-r-2 border-b-2 border-[#9A6B2F]" />
                           <span className="absolute top-1/2 left-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#9A6B2F]" />
                         </div>
-                        {liveSchemeIndex !== null && (
-                          <div className="pointer-events-none absolute right-3 bottom-3 z-10 rounded-full border border-[#FDFCF9]/80 bg-[#111110]/75 px-2.5 py-1 font-mono-tabular text-[10px] font-semibold uppercase tracking-wider text-[#FDFCF9] backdrop-blur-sm">
-                            Writing pixels · 0{liveSchemeIndex + 1}
-                          </div>
-                        )}
                       </>
                     )}
                   </div>
@@ -1231,20 +1140,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               </div>
 
               <div className="min-h-0 flex-1">
-                {embedStage === 'live' ? (
-                  <LiveEmbeddingPane
-                    embedResult={embedResult}
-                    coverImageUrl={displaySample?.image_url ?? ''}
-                    imageWidth={displaySample?.width ?? 512}
-                    imageHeight={displaySample?.height ?? 512}
-                    isIntroTransitioning={isTransitioningOut}
-                    coverReticleRef={coverReticleRef}
-                    coverScanlineRef={coverScanlineRef}
-                    onSchemeChange={setLiveSchemeIndex}
-                    onComplete={handleTransitionLiveToOverview}
-                    onSkip={handleTransitionLiveToOverview}
-                  />
-                ) : embedStage === 'focus' && embedResult && focusedScheme ? (
+                {embedStage === 'focus' && embedResult && focusedScheme ? (
                   <StegoFocusPane
                     embedResult={embedResult}
                     focusedScheme={focusedScheme}
@@ -1257,7 +1153,15 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 ) : (
                   <StegoOverviewPane
                     embedResult={embedResult}
+                    coverImageUrl={displaySample?.image_url ?? ''}
+                    imageWidth={displaySample?.width ?? 512}
+                    imageHeight={displaySample?.height ?? 512}
                     isEmbedding={isEmbedding}
+                    isIntroTransitioning={isTransitioningOut}
+                    initialCompleted={hasCompletedRaster}
+                    coverReticleRef={coverReticleRef}
+                    coverScanlineRef={coverScanlineRef}
+                    onRasterComplete={() => setHasCompletedRaster(true)}
                     onSelectScheme={handleSelectOverviewScheme}
                   />
                 )}
