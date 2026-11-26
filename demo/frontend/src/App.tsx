@@ -1,19 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { HiFiConverter } from './pages/HiFiConverter';
 import { LowFiWorkbench } from './pages/LowFiWorkbench';
 
 const TEST_PATH = '/test';
 
 function isTestRoute(pathname: string): boolean {
   return pathname === TEST_PATH || pathname === `${TEST_PATH}/`;
-}
-
-function RedirectToTest({ onRedirect }: { onRedirect: (path: string) => void }) {
-  useEffect(() => {
-    window.history.replaceState(null, '', TEST_PATH);
-    onRedirect(TEST_PATH);
-  }, [onRedirect]);
-
-  return null;
 }
 
 /**
@@ -33,12 +25,17 @@ function App() {
     };
   }, []);
 
+  const navigate = useCallback((nextPath: string) => {
+    if (window.location.pathname === nextPath) return;
+    window.history.pushState(null, '', nextPath);
+    setPathname(nextPath);
+  }, []);
+
   if (isTestRoute(pathname)) {
     return <LowFiWorkbench />;
   }
 
-  // Swap this line to `<HiFiHome />` when the root UI is ready.
-  return <RedirectToTest onRedirect={setPathname} />;
+  return <HiFiConverter onNavigate={navigate} />;
 }
 
 export default App;
