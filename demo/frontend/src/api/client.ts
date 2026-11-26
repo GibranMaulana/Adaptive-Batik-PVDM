@@ -1,6 +1,7 @@
 import type {
   EmbedRequest,
   EmbedResponse,
+  EmbedStreamEvent,
   ExtractResponse,
   HealthResponse,
   SampleCatalogResponse,
@@ -62,6 +63,60 @@ export async function embedPayload(payload: EmbedRequest): Promise<EmbedResponse
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+}
+
+export async function embedPayloadStream(
+  request: EmbedRequest,
+  onEvent: (event: EmbedStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch('/api/embed/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal,
+  });
+
+  if (!response.ok) {
+    const detail = await parseErrorDetail(response);
+    throw new ApiError(detail, response.status);
+  }
+
+  if (!response.body) {
+    throw new Error('Streaming response body is unavailable.');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+
+      let newlineIndex = buffer.indexOf('\n');
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line.length > 0) {
+          onEvent(JSON.parse(line) as EmbedStreamEvent);
+        }
+        newlineIndex = buffer.indexOf('\n');
+      }
+    }
+
+    const trailing = buffer.trim();
+    if (trailing.length > 0) {
+      onEvent(JSON.parse(trailing) as EmbedStreamEvent);
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export async function extractStego(

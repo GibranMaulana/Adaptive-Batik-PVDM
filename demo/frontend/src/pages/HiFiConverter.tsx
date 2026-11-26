@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
-import { ArrowLeft, ArrowUpRight, Loader2, Sparkles } from 'lucide-react';
-import { embedPayload, fetchHealth, fetchSamples } from '../api/client';
-import type { EmbedResponse, HealthResponse, SampleSummary, SchemeName } from '../api/types';
+import { AlertCircle, ArrowUpRight, Loader2, Sparkles } from 'lucide-react';
+import { embedPayloadStream, fetchHealth, fetchSamples } from '../api/client';
+import type {
+  CalculationStep,
+  EmbedStreamEvent,
+  HealthResponse,
+  LiveSchemeStatus,
+  SampleSummary,
+  SchemeEmbedResult,
+  SchemeLiveState,
+  SchemeName,
+} from '../api/types';
+import {
+  FourImageComparison,
+  type ComparisonViewMode,
+} from '../components/hifi/FourImageComparison';
 import { HiFiExtractor, type HiFiPreloadExtract } from '../components/hifi/HiFiExtractor';
-import type { GalleryViewMode } from '../components/hifi/SchemeResultCard';
-import { StegoFocusPane } from '../components/hifi/StegoFocusPane';
-import { StegoOverviewPane } from '../components/hifi/StegoOverviewPane';
+import { SchemeCalculationLog } from '../components/hifi/SchemeCalculationLog';
 import { TopSampleSlider } from '../components/hifi/TopSampleSlider';
 import {
   ALL_SCHEMES,
@@ -20,10 +31,16 @@ import {
 gsap.registerPlugin(useGSAP);
 
 type ActiveMode = 'embed' | 'extract';
-type EmbedStage = 'compose' | 'overview' | 'focus';
+type EmbedStage = 'compose' | 'results';
 
 interface HiFiConverterProps {
   onNavigate: (path: string) => void;
+}
+
+interface SchemeQueue {
+  steps: Array<{ step: CalculationStep; totalSteps: number }>;
+  pendingResult: SchemeEmbedResult | null;
+  timerId: number | null;
 }
 
 const FEATURED_ORDER = ['parang_01.png', 'kawung_01.png', 'megamendung_01.png'] as const;
@@ -68,41 +85,75 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-function isDesktopViewport(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
+function createInitialSchemeStates(): Record<SchemeName, SchemeLiveState> {
+  return {
+    scheme1: {
+      scheme: 'scheme1',
+      status: 'processing',
+      analysis: null,
+      steps: [],
+      totalSteps: 0,
+      result: null,
+      pendingStegoBase64: null,
+      errorMessage: null,
+    },
+    scheme2: {
+      scheme: 'scheme2',
+      status: 'processing',
+      analysis: null,
+      steps: [],
+      totalSteps: 0,
+      result: null,
+      pendingStegoBase64: null,
+      errorMessage: null,
+    },
+    scheme3: {
+      scheme: 'scheme3',
+      status: 'processing',
+      analysis: null,
+      steps: [],
+      totalSteps: 0,
+      result: null,
+      pendingStegoBase64: null,
+      errorMessage: null,
+    },
+  };
+}
+
+function createEmptyQueues(): Record<SchemeName, SchemeQueue> {
+  return {
+    scheme1: { steps: [], pendingResult: null, timerId: null },
+    scheme2: { steps: [], pendingResult: null, timerId: null },
+    scheme3: { steps: [], pendingResult: null, timerId: null },
+  };
+}
+
+function mapResultStatus(status: SchemeEmbedResult['status']): LiveSchemeStatus {
+  if (status === 'ok') return 'completed';
+  if (status === 'overflow') return 'overflow';
+  return 'failed';
 }
 
 export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const topSliderRef = useRef<HTMLDivElement | null>(null);
-  const heroPaneRef = useRef<HTMLElement | null>(null);
-  const sampleFrameRef = useRef<HTMLDivElement | null>(null);
+  const heroSectionRef = useRef<HTMLElement | null>(null);
   const composeCaptionRef = useRef<HTMLDivElement | null>(null);
   const heroImgRef = useRef<HTMLImageElement | null>(null);
   const bottomComposerRef = useRef<HTMLDivElement | null>(null);
-  const rightPaneRef = useRef<HTMLDivElement | null>(null);
 
-  const activeTimelineRef = useRef<gsap.core.Timeline | null>(null);
-  const returningFromFocusRef = useRef(false);
-  const embedStageRef = useRef<EmbedStage>('compose');
-
-  const coverReticleRef = useRef<HTMLDivElement | null>(null);
-  const coverScanlineRef = useRef<HTMLDivElement | null>(null);
+  const exitTimelineRef = useRef<gsap.core.Timeline | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const queuesRef = useRef<Record<SchemeName, SchemeQueue>>(createEmptyQueues());
+  const skipPacingRef = useRef(false);
+  const receivedAnyStreamEventRef = useRef(false);
 
   const prevSampleKeyRef = useRef<string>('');
-  const prevFocusedSchemeRef = useRef<SchemeName | null>(null);
-  const focusSwitchDirRef = useRef<1 | -1>(1);
-
   const embedRequestIdRef = useRef(0);
   const extractCounterRef = useRef(0);
 
   const [activeMode, setActiveMode] = useState<ActiveMode>('embed');
   const [embedStage, setEmbedStage] = useState<EmbedStage>('compose');
-  const [focusedScheme, setFocusedScheme] = useState<SchemeName | null>(null);
-
-  useEffect(() => {
-    embedStageRef.current = embedStage;
-  }, [embedStage]);
 
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthOffline, setHealthOffline] = useState(false);
@@ -113,14 +164,78 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const [selectedSample, setSelectedSample] = useState<SampleSummary | null>(null);
 
   const [message, setMessage] = useState<string>(SAMPLE_MESSAGE);
-  const [isEmbedding, setIsEmbedding] = useState(false);
   const [isTransitioningOut, setIsTransitioningOut] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [embedError, setEmbedError] = useState<string | null>(null);
-  const [embedResult, setEmbedResult] = useState<EmbedResponse | null>(null);
-  const [viewMode, setViewMode] = useState<GalleryViewMode>('stego');
-  const [hasCompletedRaster, setHasCompletedRaster] = useState(false);
+  const [viewMode, setViewMode] = useState<ComparisonViewMode>('stego');
+  const [hasPendingPacing, setHasPendingPacing] = useState(false);
+
+  const [schemeStates, setSchemeStates] = useState<Record<SchemeName, SchemeLiveState>>(
+    createInitialSchemeStates,
+  );
+  const [activeRunMeta, setActiveRunMeta] = useState<{
+    motif: string;
+    filename: string;
+    imageUrl: string;
+    width: number;
+    height: number;
+    payloadBytes: number;
+  } | null>(null);
 
   const [preloadExtract, setPreloadExtract] = useState<HiFiPreloadExtract | null>(null);
+
+  const clearAllQueueTimers = useCallback(() => {
+    for (const scheme of ALL_SCHEMES) {
+      const queue = queuesRef.current[scheme];
+      if (queue.timerId !== null) {
+        window.clearTimeout(queue.timerId);
+        queue.timerId = null;
+      }
+      queue.steps = [];
+      queue.pendingResult = null;
+    }
+    setHasPendingPacing(false);
+  }, []);
+
+  const abortActiveStream = useCallback(() => {
+    embedRequestIdRef.current += 1;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    exitTimelineRef.current?.kill();
+    exitTimelineRef.current = null;
+    clearAllQueueTimers();
+    setIsStreaming(false);
+    setIsTransitioningOut(false);
+  }, [clearAllQueueTimers]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      exitTimelineRef.current?.kill();
+    };
+  }, []);
+
+  useEffect(() => {
+    const queues = queuesRef.current;
+    return () => {
+      for (const scheme of ALL_SCHEMES) {
+        const timerId = queues[scheme].timerId;
+        if (timerId !== null) {
+          window.clearTimeout(timerId);
+          queues[scheme].timerId = null;
+        }
+      }
+    };
+  }, []);
+
+  const refreshPendingPacingFlag = useCallback(() => {
+    const pending = ALL_SCHEMES.some(
+      (scheme) =>
+        queuesRef.current[scheme].steps.length > 0 ||
+        queuesRef.current[scheme].pendingResult !== null,
+    );
+    setHasPendingPacing(pending);
+  }, []);
 
   const loadCatalogAndHealth = useCallback(async () => {
     fetchHealth()
@@ -216,7 +331,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
           reduceMotion: '(prefers-reduced-motion: reduce)',
         },
         (context) => {
-          if (context.conditions?.reduceMotion) return;
+          if (!context.conditions?.isMotionOk || context.conditions?.reduceMotion) return;
 
           gsap.fromTo(
             heroImg,
@@ -239,200 +354,103 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     { scope: stageRef, dependencies: [selectedSampleKey] },
   );
 
-  // 2. Persistent stage initialization & responsive matchMedia (runs on activeMode mount)
+  // 2. Stage enter animations for compose, results, and extract
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
       mm.add(
         {
-          isDesktop: '(min-width: 1024px)',
           isMotionOk: '(prefers-reduced-motion: no-preference)',
           reduceMotion: '(prefers-reduced-motion: reduce)',
         },
         (context) => {
-          const isDesktop = Boolean(context.conditions?.isDesktop);
-          const reduceMotion = Boolean(context.conditions?.reduceMotion);
+          if (!context.conditions?.isMotionOk || context.conditions?.reduceMotion) return;
 
           if (activeMode === 'extract') {
-            if (!reduceMotion) {
-              gsap.from('.extract-stage', {
-                y: 16,
-                autoAlpha: 0,
-                duration: 0.42,
-                ease: 'power3.out',
-                clearProps: 'transform,opacity,visibility',
-              });
-            }
-            return;
-          }
-
-          if (embedStageRef.current === 'compose') {
-            if (heroPaneRef.current) {
-              gsap.set(heroPaneRef.current, {
-                xPercent: isDesktop ? 50 : 0,
-                autoAlpha: 1,
-                pointerEvents: 'auto',
-              });
-            }
-            if (sampleFrameRef.current) {
-              gsap.set(sampleFrameRef.current, { scale: 1 });
-            }
-            if (topSliderRef.current) {
-              gsap.set(topSliderRef.current, { y: 0, autoAlpha: 1 });
-            }
-            if (bottomComposerRef.current) {
-              gsap.set(bottomComposerRef.current, { y: 0, autoAlpha: 1 });
-            }
-            if (composeCaptionRef.current) {
-              gsap.set(composeCaptionRef.current, { y: 0, autoAlpha: 1 });
-            }
-            gsap.set('.split-left-chrome', {
-              y: 10,
+            gsap.from('.extract-stage', {
+              y: 16,
               autoAlpha: 0,
-              pointerEvents: 'none',
+              duration: 0.42,
+              ease: 'power3.out',
+              clearProps: 'transform,opacity,visibility',
             });
-            if (rightPaneRef.current) {
-              gsap.set(rightPaneRef.current, {
-                x: 0,
-                autoAlpha: 0,
-                pointerEvents: 'none',
-              });
-            }
-          } else {
-            if (heroPaneRef.current) {
-              gsap.set(heroPaneRef.current, {
-                xPercent: 0,
-                autoAlpha: isDesktop ? 1 : 0,
-                pointerEvents: isDesktop ? 'auto' : 'none',
-              });
-            }
-            if (sampleFrameRef.current) {
-              gsap.set(sampleFrameRef.current, { scale: isDesktop ? 1.06 : 1 });
-            }
-            if (topSliderRef.current) {
-              gsap.set(topSliderRef.current, { y: -28, autoAlpha: 0 });
-            }
-            if (bottomComposerRef.current) {
-              gsap.set(bottomComposerRef.current, { y: 28, autoAlpha: 0 });
-            }
-            if (composeCaptionRef.current) {
-              gsap.set(composeCaptionRef.current, { y: 8, autoAlpha: 0 });
-            }
-            gsap.set('.split-left-chrome', {
-              y: 0,
-              autoAlpha: 1,
-              pointerEvents: 'auto',
-            });
-            if (rightPaneRef.current) {
-              gsap.set(rightPaneRef.current, {
-                x: 0,
-                autoAlpha: 1,
-                pointerEvents: 'auto',
-              });
-            }
-            gsap.set('.stego-overview-slot', { x: 0, autoAlpha: 1 });
-          }
-        },
-        stageRef,
-      );
-
-      return () => {
-        activeTimelineRef.current?.kill();
-        activeTimelineRef.current = null;
-        setIsTransitioningOut(false);
-        mm.revert();
-      };
-    },
-    { scope: stageRef, dependencies: [activeMode] },
-  );
-
-  // 3. Right-pane overview <-> focus choreography (never touches left/compose layers)
-  useGSAP(
-    () => {
-      if (activeMode !== 'embed') return;
-
-      const mm = gsap.matchMedia();
-      mm.add(
-        {
-          isMotionOk: '(prefers-reduced-motion: no-preference)',
-          reduceMotion: '(prefers-reduced-motion: reduce)',
-        },
-        (context) => {
-          if (context.conditions?.reduceMotion) {
-            returningFromFocusRef.current = false;
             return;
           }
 
-          let reverted = false;
-
-          if (embedStage === 'focus') {
-            const focusTl = gsap.timeline();
-            focusTl
-              .fromTo(
-                '.focus-top-bar',
-                { y: -10, autoAlpha: 0 },
-                {
-                  y: 0,
-                  autoAlpha: 1,
-                  duration: 0.32,
-                  ease: 'power3.out',
-                  clearProps: 'transform,opacity,visibility',
-                },
-                0,
-              )
-              .fromTo(
-                '.focus-swap-content',
-                { scale: 0.96, y: 12, autoAlpha: 0 },
-                {
-                  scale: 1,
-                  y: 0,
-                  autoAlpha: 1,
-                  duration: 0.42,
-                  ease: 'power3.out',
-                  clearProps: 'transform,opacity,visibility',
-                },
-                0.04,
-              )
-              .fromTo(
-                '.focus-detail-stagger',
-                { y: 12, autoAlpha: 0 },
+          if (embedStage === 'compose') {
+            const tl = gsap.timeline();
+            if (topSliderRef.current) {
+              tl.fromTo(
+                topSliderRef.current,
+                { y: -16, autoAlpha: 0 },
                 {
                   y: 0,
                   autoAlpha: 1,
                   duration: 0.36,
-                  stagger: 0.06,
                   ease: 'power3.out',
                   clearProps: 'transform,opacity,visibility',
                 },
-                0.12,
+                0,
               );
+            }
+            if (heroSectionRef.current) {
+              tl.fromTo(
+                heroSectionRef.current,
+                { scale: 0.97, autoAlpha: 0 },
+                {
+                  scale: 1,
+                  autoAlpha: 1,
+                  duration: 0.4,
+                  ease: 'power3.out',
+                  clearProps: 'transform,opacity,visibility',
+                },
+                0.04,
+              );
+            }
+            if (bottomComposerRef.current) {
+              tl.fromTo(
+                bottomComposerRef.current,
+                { y: 18, autoAlpha: 0 },
+                {
+                  y: 0,
+                  autoAlpha: 1,
+                  duration: 0.38,
+                  ease: 'power3.out',
+                  clearProps: 'transform,opacity,visibility',
+                },
+                0.08,
+              );
+            }
             return;
           }
 
-          if (embedStage === 'overview' && returningFromFocusRef.current) {
+          if (embedStage === 'results') {
             gsap.fromTo(
-              '.stego-overview-slot',
-              { scale: 0.97, y: 10, autoAlpha: 0 },
+              '.results-card-enter',
+              { y: 18, autoAlpha: 0 },
               {
-                scale: 1,
                 y: 0,
                 autoAlpha: 1,
-                duration: 0.38,
+                duration: 0.42,
                 stagger: 0.06,
                 ease: 'power3.out',
                 clearProps: 'transform,opacity,visibility',
-                onComplete: () => {
-                  if (!reverted) {
-                    returningFromFocusRef.current = false;
-                  }
-                },
+              },
+            );
+            gsap.fromTo(
+              '.results-log-enter',
+              { y: 22, autoAlpha: 0 },
+              {
+                y: 0,
+                autoAlpha: 1,
+                duration: 0.46,
+                stagger: 0.08,
+                delay: 0.1,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity,visibility',
               },
             );
           }
-
-          return () => {
-            reverted = true;
-          };
         },
         stageRef,
       );
@@ -442,401 +460,342 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     { scope: stageRef, dependencies: [activeMode, embedStage] },
   );
 
-  // 4. Crisp crossfade/slide when switching between 01 | 02 | 03 in focus stage
-  useGSAP(
-    () => {
-      if (!focusedScheme) {
-        prevFocusedSchemeRef.current = null;
-        return;
-      }
-      const prev = prevFocusedSchemeRef.current;
-      prevFocusedSchemeRef.current = focusedScheme;
+  // Per-scheme non-blocking pacing drain
+  const scheduleSchemeDrain = useCallback(
+    function drainScheme(scheme: SchemeName, reqId: number) {
+      const queue = queuesRef.current[scheme];
+      if (queue.timerId !== null) return;
 
-      if (!prev || prev === focusedScheme) return;
-      if (activeMode !== 'embed' || embedStage !== 'focus') return;
+      const stepDelay =
+        queue.steps.length > 32 ? Math.max(16, Math.floor(1200 / queue.steps.length)) : 45;
 
-      const dir = focusSwitchDirRef.current;
-      const mm = gsap.matchMedia();
-      mm.add(
-        {
-          isMotionOk: '(prefers-reduced-motion: no-preference)',
-          reduceMotion: '(prefers-reduced-motion: reduce)',
-        },
-        (context) => {
-          if (context.conditions?.reduceMotion) return;
+      queue.timerId = window.setTimeout(() => {
+        queue.timerId = null;
+        if (embedRequestIdRef.current !== reqId) return;
 
-          gsap.fromTo(
-            '.focus-swap-content',
-            { x: dir * 24, autoAlpha: 0 },
-            {
-              x: 0,
-              autoAlpha: 1,
-              duration: 0.34,
-              ease: 'power3.out',
-              clearProps: 'transform,opacity,visibility',
-            },
-          );
-        },
-        stageRef,
-      );
+        const nextItem = queue.steps.shift();
+        const finishedAllQueuedSteps = queue.steps.length === 0;
+        const resultToApply = finishedAllQueuedSteps ? queue.pendingResult : null;
+        if (resultToApply) {
+          queue.pendingResult = null;
+        }
 
-      return () => mm.revert();
+        if (nextItem || resultToApply) {
+          setSchemeStates((prev) => {
+            const current = prev[scheme];
+            const nextSteps = nextItem ? [...current.steps, nextItem.step] : current.steps;
+            const nextTotal = nextItem ? nextItem.totalSteps : current.totalSteps;
+
+            return {
+              ...prev,
+              [scheme]: {
+                ...current,
+                steps: nextSteps,
+                totalSteps: nextTotal,
+                ...(resultToApply
+                  ? {
+                      status: mapResultStatus(resultToApply.status),
+                      result: resultToApply,
+                      errorMessage: resultToApply.error,
+                    }
+                  : {}),
+              },
+            };
+          });
+        }
+
+        if (queue.steps.length > 0 || queue.pendingResult !== null) {
+          drainScheme(scheme, reqId);
+        } else {
+          refreshPendingPacingFlag();
+        }
+      }, stepDelay);
     },
-    { scope: stageRef, dependencies: [focusedScheme] },
+    [refreshPendingPacingFlag],
   );
 
-  const runBackToComposeAnimation = (clearError: boolean) => {
-    activeTimelineRef.current?.kill();
-    activeTimelineRef.current = null;
-    returningFromFocusRef.current = false;
+  const handleSkipPacing = useCallback(() => {
+    skipPacingRef.current = true;
 
-    if (coverReticleRef.current) {
-      gsap.set(coverReticleRef.current, { autoAlpha: 0 });
-    }
-    if (coverScanlineRef.current) {
-      gsap.set(coverScanlineRef.current, { autoAlpha: 0 });
-    }
-
-    if (clearError) {
-      setEmbedError(null);
-    }
-
-    const isDesktop = isDesktopViewport();
-
-    if (prefersReducedMotion()) {
-      if (rightPaneRef.current) {
-        gsap.set(rightPaneRef.current, { x: 0, autoAlpha: 0, pointerEvents: 'none' });
+    const drained: Partial<Record<SchemeName, { steps: CalculationStep[]; totalSteps: number; result: SchemeEmbedResult | null }>> = {};
+    for (const scheme of ALL_SCHEMES) {
+      const queue = queuesRef.current[scheme];
+      if (queue.timerId !== null) {
+        window.clearTimeout(queue.timerId);
+        queue.timerId = null;
       }
-      gsap.set('.split-left-chrome', { y: 10, autoAlpha: 0, pointerEvents: 'none' });
-      if (heroPaneRef.current) {
-        gsap.set(heroPaneRef.current, {
-          xPercent: isDesktop ? 50 : 0,
-          autoAlpha: 1,
-          pointerEvents: 'auto',
-        });
+      if (queue.steps.length > 0 || queue.pendingResult !== null) {
+        const lastTotal =
+          queue.steps.length > 0 ? queue.steps[queue.steps.length - 1].totalSteps : 0;
+        drained[scheme] = {
+          steps: queue.steps.map((item) => item.step),
+          totalSteps: lastTotal,
+          result: queue.pendingResult,
+        };
+        queue.steps = [];
+        queue.pendingResult = null;
       }
-      if (sampleFrameRef.current) {
-        gsap.set(sampleFrameRef.current, { scale: 1 });
-      }
-      if (topSliderRef.current) {
-        gsap.set(topSliderRef.current, { y: 0, autoAlpha: 1 });
-      }
-      if (bottomComposerRef.current) {
-        gsap.set(bottomComposerRef.current, { y: 0, autoAlpha: 1 });
-      }
-      if (composeCaptionRef.current) {
-        gsap.set(composeCaptionRef.current, { y: 0, autoAlpha: 1 });
-      }
-      embedStageRef.current = 'compose';
-      prevFocusedSchemeRef.current = null;
-      setFocusedScheme(null);
-      setEmbedStage('compose');
-      setIsTransitioningOut(false);
-      return;
     }
 
-    setIsTransitioningOut(true);
-
-    const tl = gsap.timeline({
-      onComplete: () => {
-        if (activeTimelineRef.current === tl) {
-          activeTimelineRef.current = null;
-        }
-        if (rightPaneRef.current) {
-          gsap.set(rightPaneRef.current, { x: 0 });
-        }
-        embedStageRef.current = 'compose';
-        prevFocusedSchemeRef.current = null;
-        setFocusedScheme(null);
-        setEmbedStage('compose');
-        setIsTransitioningOut(false);
-      },
+    setSchemeStates((prev) => {
+      const next = { ...prev };
+      for (const scheme of ALL_SCHEMES) {
+        const patch = drained[scheme];
+        if (!patch) continue;
+        const current = prev[scheme];
+        next[scheme] = {
+          ...current,
+          steps: [...current.steps, ...patch.steps],
+          totalSteps: Math.max(current.totalSteps, patch.totalSteps),
+          ...(patch.result
+            ? {
+                status: mapResultStatus(patch.result.status),
+                result: patch.result,
+                errorMessage: patch.result.error,
+              }
+            : {}),
+        };
+      }
+      return next;
     });
-    activeTimelineRef.current = tl;
 
-    if (rightPaneRef.current) {
-      tl.set(rightPaneRef.current, { pointerEvents: 'none' }, 0).to(
-        rightPaneRef.current,
-        { x: 24, autoAlpha: 0, duration: 0.26, ease: 'power2.in' },
-        0,
-      );
-    }
+    setHasPendingPacing(false);
+  }, []);
 
-    tl.set('.split-left-chrome', { pointerEvents: 'none' }, 0).to(
-      '.split-left-chrome',
-      { y: 10, autoAlpha: 0, duration: 0.24, ease: 'power2.in' },
-      0,
-    );
+  const handleStreamEvent = useCallback(
+    (event: EmbedStreamEvent, reqId: number) => {
+      if (embedRequestIdRef.current !== reqId) return;
 
-    if (heroPaneRef.current) {
-      if (isDesktop) {
-        tl.to(
-          heroPaneRef.current,
-          { xPercent: 50, autoAlpha: 1, pointerEvents: 'auto', duration: 0.56, ease: 'power3.inOut' },
-          0.18,
-        );
-      } else {
-        tl.to(
-          heroPaneRef.current,
-          { xPercent: 0, autoAlpha: 1, pointerEvents: 'auto', duration: 0.36, ease: 'power3.out' },
-          0.18,
-        );
+      if (event.type === 'done') {
+        setIsStreaming(false);
+        return;
       }
-    }
 
-    if (sampleFrameRef.current) {
-      if (isDesktop) {
-        tl.to(
-          sampleFrameRef.current,
-          { scale: 1, duration: 0.56, ease: 'power3.inOut' },
-          0.18,
-        );
-      } else {
-        tl.set(sampleFrameRef.current, { scale: 1 }, 0.18);
+      receivedAnyStreamEventRef.current = true;
+      const scheme = event.scheme;
+
+      if (event.type === 'scheme_start') {
+        setSchemeStates((prev) => ({
+          ...prev,
+          [scheme]: {
+            ...prev[scheme],
+            analysis: {
+              width: event.width,
+              height: event.height,
+              payload_bytes: event.payload_bytes,
+              required_bits: event.required_bits,
+              capacity: event.capacity,
+            },
+          },
+        }));
+        return;
       }
-    }
 
-    if (topSliderRef.current) {
-      tl.to(
-        topSliderRef.current,
-        { y: 0, autoAlpha: 1, duration: 0.36, ease: 'power3.out' },
-        0.52,
-      );
-    }
+      if (event.type === 'scheme_step') {
+        if (prefersReducedMotion() || skipPacingRef.current) {
+          setSchemeStates((prev) => ({
+            ...prev,
+            [scheme]: {
+              ...prev[scheme],
+              steps: [...prev[scheme].steps, event.step],
+              totalSteps: event.total_steps,
+            },
+          }));
+        } else {
+          queuesRef.current[scheme].steps.push({
+            step: event.step,
+            totalSteps: event.total_steps,
+          });
+          setHasPendingPacing(true);
+          scheduleSchemeDrain(scheme, reqId);
+        }
+        return;
+      }
 
-    if (bottomComposerRef.current) {
-      tl.to(
-        bottomComposerRef.current,
-        { y: 0, autoAlpha: 1, duration: 0.36, ease: 'power3.out' },
-        0.52,
-      );
-    }
+      if (event.type === 'scheme_result') {
+        const queue = queuesRef.current[scheme];
+        const hasQueuedSteps = queue.steps.length > 0;
 
-    if (composeCaptionRef.current) {
-      tl.to(
-        composeCaptionRef.current,
-        { y: 0, autoAlpha: 1, duration: 0.3, ease: 'power3.out' },
-        0.56,
-      );
-    }
-  };
+        if (!hasQueuedSteps || prefersReducedMotion() || skipPacingRef.current) {
+          setSchemeStates((prev) => ({
+            ...prev,
+            [scheme]: {
+              ...prev[scheme],
+              status: mapResultStatus(event.result.status),
+              result: event.result,
+              pendingStegoBase64: event.result.stego_png_base64 ?? prev[scheme].pendingStegoBase64,
+              errorMessage: event.result.error,
+            },
+          }));
+        } else {
+          // Give PixelRasterCanvas the real stego buffer while remaining steps tick out
+          if (event.result.stego_png_base64) {
+            setSchemeStates((prev) => ({
+              ...prev,
+              [scheme]: {
+                ...prev[scheme],
+                pendingStegoBase64: event.result.stego_png_base64,
+              },
+            }));
+          }
+          queue.pendingResult = event.result;
+          setHasPendingPacing(true);
+          scheduleSchemeDrain(scheme, reqId);
+        }
+      }
+    },
+    [scheduleSchemeDrain],
+  );
 
   const handleEmbed = () => {
-    if (!selectedSample || isEmbedding || isTransitioningOut) return;
+    if (!selectedSample || isTransitioningOut || isStreaming) return;
 
-    embedRequestIdRef.current += 1;
+    abortActiveStream();
     const reqId = embedRequestIdRef.current;
-    const reduceMotion = prefersReducedMotion();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-    setIsEmbedding(true);
+    skipPacingRef.current = prefersReducedMotion();
+    receivedAnyStreamEventRef.current = false;
+
     setEmbedError(null);
-    setEmbedResult(null);
-    setHasCompletedRaster(false);
-    setFocusedScheme(null);
-    prevFocusedSchemeRef.current = null;
-    returningFromFocusRef.current = false;
-    embedStageRef.current = 'overview';
-    setEmbedStage('overview');
-
-    // Kick off API call immediately in parallel with the single-stage timeline
-    embedPayload({
+    setViewMode('stego');
+    setSchemeStates(createInitialSchemeStates());
+    setActiveRunMeta({
       motif: selectedSample.motif,
       filename: selectedSample.filename,
-      message,
-    })
-      .then((response) => {
+      imageUrl: selectedSample.image_url,
+      width: selectedSample.width,
+      height: selectedSample.height,
+      payloadBytes,
+    });
+    setIsStreaming(true);
+
+    // Stream concurrently while GSAP exit transition plays
+    embedPayloadStream(
+      {
+        motif: selectedSample.motif,
+        filename: selectedSample.filename,
+        message,
+      },
+      (event) => handleStreamEvent(event, reqId),
+      controller.signal,
+    )
+      .then(() => {
         if (embedRequestIdRef.current !== reqId) return;
-        setEmbedResult(response);
-        setIsEmbedding(false);
+        setIsStreaming(false);
       })
       .catch((err) => {
         if (embedRequestIdRef.current !== reqId) return;
-        const messageText = err instanceof Error ? err.message : 'Embedding request failed.';
-        setIsEmbedding(false);
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+
+        const messageText = err instanceof Error ? err.message : 'Streaming embed failed.';
+        setIsStreaming(false);
         setEmbedError(messageText);
-        runBackToComposeAnimation(false);
+
+        if (!receivedAnyStreamEventRef.current) {
+          exitTimelineRef.current?.kill();
+          exitTimelineRef.current = null;
+          setIsTransitioningOut(false);
+          setEmbedStage('compose');
+        } else {
+          // Mark any schemes still processing as failed without disturbing completed/overflow ones
+          clearAllQueueTimers();
+          setSchemeStates((prev) => {
+            const next = { ...prev };
+            for (const scheme of ALL_SCHEMES) {
+              if (next[scheme].status === 'processing') {
+                next[scheme] = {
+                  ...next[scheme],
+                  status: 'failed',
+                  errorMessage: messageText,
+                };
+              }
+            }
+            return next;
+          });
+        }
       });
 
-    const isDesktop = isDesktopViewport();
-
-    if (reduceMotion) {
-      if (topSliderRef.current) {
-        gsap.set(topSliderRef.current, { y: -28, autoAlpha: 0 });
-      }
-      if (bottomComposerRef.current) {
-        gsap.set(bottomComposerRef.current, { y: 28, autoAlpha: 0 });
-      }
-      if (composeCaptionRef.current) {
-        gsap.set(composeCaptionRef.current, { y: 8, autoAlpha: 0 });
-      }
-      if (heroPaneRef.current) {
-        gsap.set(heroPaneRef.current, {
-          xPercent: 0,
-          autoAlpha: isDesktop ? 1 : 0,
-          pointerEvents: isDesktop ? 'auto' : 'none',
-        });
-      }
-      if (sampleFrameRef.current) {
-        gsap.set(sampleFrameRef.current, { scale: isDesktop ? 1.06 : 1 });
-      }
-      gsap.set('.split-left-chrome', { y: 0, autoAlpha: 1, pointerEvents: 'auto' });
-      if (rightPaneRef.current) {
-        gsap.set(rightPaneRef.current, { x: 0, autoAlpha: 1, pointerEvents: 'auto' });
-      }
-      gsap.set('.stego-overview-slot', { x: 0, autoAlpha: 1 });
+    if (prefersReducedMotion()) {
+      setEmbedStage('results');
       return;
     }
 
-    activeTimelineRef.current?.kill();
     setIsTransitioningOut(true);
-
-    if (rightPaneRef.current) {
-      gsap.set(rightPaneRef.current, { x: 28, autoAlpha: 0, pointerEvents: 'none' });
-    }
-
     const tl = gsap.timeline({
       onComplete: () => {
-        if (activeTimelineRef.current === tl) {
-          activeTimelineRef.current = null;
+        if (exitTimelineRef.current === tl) {
+          exitTimelineRef.current = null;
         }
         setIsTransitioningOut(false);
+        if (embedRequestIdRef.current === reqId) {
+          setEmbedStage('results');
+        }
       },
     });
-    activeTimelineRef.current = tl;
+    exitTimelineRef.current = tl;
 
-    // Step 1 (0.00s): Slide top slider, bottom composer, and compose caption out
     if (topSliderRef.current) {
       tl.to(
         topSliderRef.current,
-        { y: -28, autoAlpha: 0, duration: 0.3, ease: 'power2.in' },
+        { y: -24, autoAlpha: 0, duration: 0.24, ease: 'power2.in' },
         0,
       );
     }
     if (bottomComposerRef.current) {
       tl.to(
         bottomComposerRef.current,
-        { y: 28, autoAlpha: 0, duration: 0.3, ease: 'power2.in' },
+        { y: 24, autoAlpha: 0, duration: 0.24, ease: 'power2.in' },
         0,
       );
     }
     if (composeCaptionRef.current) {
       tl.to(
         composeCaptionRef.current,
-        { y: 8, autoAlpha: 0, duration: 0.22, ease: 'power2.in' },
+        { y: 8, autoAlpha: 0, duration: 0.18, ease: 'power2.in' },
         0,
       );
     }
-
-    // Step 2 (0.32s): Glide hero pane smoothly from center -> left 50% + subtle scale polish
-    if (heroPaneRef.current) {
-      if (isDesktop) {
-        tl.to(
-          heroPaneRef.current,
-          { xPercent: 0, duration: 0.62, ease: 'power3.inOut' },
-          0.32,
-        );
-      } else {
-        tl.to(
-          heroPaneRef.current,
-          { autoAlpha: 0, pointerEvents: 'none', duration: 0.34, ease: 'power2.in' },
-          0.42,
-        );
-      }
-    }
-
-    if (sampleFrameRef.current && isDesktop) {
+    if (heroSectionRef.current) {
       tl.to(
-        sampleFrameRef.current,
-        { scale: 1.06, duration: 0.62, ease: 'power3.inOut' },
-        0.32,
-      );
-    }
-
-    tl.set('.split-left-chrome', { pointerEvents: 'auto' }, 0.62).to(
-      '.split-left-chrome',
-      { y: 0, autoAlpha: 1, duration: 0.38, ease: 'power3.out' },
-      0.62,
-    );
-
-    // Step 3 (0.72s): Reveal right 50% pane directly in 'overview' stage
-    if (rightPaneRef.current) {
-      tl.fromTo(
-        rightPaneRef.current,
-        { x: 28, autoAlpha: 0 },
-        {
-          x: 0,
-          autoAlpha: 1,
-          pointerEvents: 'auto',
-          duration: 0.44,
-          ease: 'power3.out',
-          clearProps: 'transform',
-        },
-        0.72,
+        heroSectionRef.current,
+        { scale: 0.96, autoAlpha: 0, duration: 0.26, ease: 'power2.inOut' },
+        0.06,
       );
     }
   };
 
   const handleBackToCompose = () => {
-    embedRequestIdRef.current += 1;
-    setIsEmbedding(false);
-    setHasCompletedRaster(false);
-    runBackToComposeAnimation(true);
+    abortActiveStream();
+    setEmbedError(null);
+    setEmbedStage('compose');
   };
 
-  const handleSelectOverviewScheme = (scheme: SchemeName) => {
-    if (!embedResult) return;
-    returningFromFocusRef.current = false;
-    prevFocusedSchemeRef.current = null;
-    embedStageRef.current = 'focus';
-    setFocusedScheme(scheme);
-    setEmbedStage('focus');
-  };
-
-  const handleSwitchFocusedScheme = (nextScheme: SchemeName) => {
-    if (!focusedScheme || nextScheme === focusedScheme) return;
-    const prevIdx = ALL_SCHEMES.indexOf(focusedScheme);
-    const nextIdx = ALL_SCHEMES.indexOf(nextScheme);
-    focusSwitchDirRef.current = nextIdx >= prevIdx ? 1 : -1;
-    setFocusedScheme(nextScheme);
-  };
-
-  const handleReturnToOverview = () => {
-    returningFromFocusRef.current = true;
-    prevFocusedSchemeRef.current = null;
-    embedStageRef.current = 'overview';
-    setEmbedStage('overview');
+  const handleSwitchMode = (mode: ActiveMode) => {
+    if (mode === activeMode) return;
+    if (mode === 'extract') {
+      abortActiveStream();
+    }
+    setActiveMode(mode);
   };
 
   const handleExtractFile = (file: File) => {
+    abortActiveStream();
     extractCounterRef.current += 1;
     setPreloadExtract({ file, requestId: extractCounterRef.current });
     setActiveMode('extract');
   };
 
-  const activeCoverSample = useMemo(() => {
-    if (!embedResult) return selectedSample;
-    return (
-      samples.find(
-        (s) => s.motif === embedResult.motif && s.filename === embedResult.filename,
-      ) ?? selectedSample
-    );
-  }, [embedResult, samples, selectedSample]);
-
-  const isCompose = embedStage === 'compose';
-  const displaySample = isCompose ? selectedSample : activeCoverSample;
-  const coverMotif = embedResult?.motif ?? displaySample?.motif ?? '';
-  const coverFilename = embedResult?.filename ?? displaySample?.filename ?? '';
-  const activePayloadBytes = embedResult?.payload_bytes ?? payloadBytes;
-
   return (
     <div className="min-h-dvh bg-[#F6F4EF] text-[#111110]">
       <header className="sticky top-0 z-30 h-14 border-b border-[#E4DFD3] bg-[#FDFCF9]/90 backdrop-blur-md">
-        <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6">
+        <div className="mx-auto flex h-full max-w-[1520px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-2.5">
             <span className="font-editorial text-xl tracking-tight text-[#111110] sm:text-2xl">
               BATIK PVDM
             </span>
-            <span className="rounded border border-[#E4DFD3] bg-[#F6F4EF] px-1.5 py-0.5 font-mono-tabular text-[10px] font-medium tracking-[0.14em] text-[#9A6B2F]">
+            <span className="rounded border border-[#E4DFD3] bg-[#F6F4EF] px-1.5 py-0.5 text-[10px] font-medium tracking-[0.14em] text-[#9A6B2F] tabular-nums">
               HVS-RGB
             </span>
           </div>
@@ -850,7 +809,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               type="button"
               role="tab"
               aria-selected={activeMode === 'embed'}
-              onClick={() => setActiveMode('embed')}
+              onClick={() => handleSwitchMode('embed')}
               className={`rounded-full px-3.5 py-1 text-xs font-medium transition-colors ${
                 activeMode === 'embed'
                   ? 'bg-[#111110] text-[#FDFCF9]'
@@ -863,7 +822,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               type="button"
               role="tab"
               aria-selected={activeMode === 'extract'}
-              onClick={() => setActiveMode('extract')}
+              onClick={() => handleSwitchMode('extract')}
               className={`rounded-full px-3.5 py-1 text-xs font-medium transition-colors ${
                 activeMode === 'extract'
                   ? 'bg-[#111110] text-[#FDFCF9]'
@@ -876,7 +835,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
           <div className="flex items-center gap-3">
             <div
-              className="hidden items-center gap-1.5 font-mono-tabular text-[11px] text-[#6B665C] sm:inline-flex"
+              className="hidden items-center gap-1.5 text-[11px] text-[#6B665C] tabular-nums sm:inline-flex"
               title={health ? `API ${health.status} (${health.phase})` : 'API status'}
             >
               <span
@@ -895,9 +854,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               href="/test"
               onClick={(e) => {
                 e.preventDefault();
+                abortActiveStream();
                 onNavigate('/test');
               }}
-              className="inline-flex items-center gap-1 rounded-full border border-[#E4DFD3] bg-[#F6F4EF] px-2.5 py-1 font-mono-tabular text-[11px] text-[#6B665C] transition-colors hover:border-[#9A6B2F] hover:text-[#111110]"
+              className="inline-flex items-center gap-1 rounded-full border border-[#E4DFD3] bg-[#F6F4EF] px-2.5 py-1 text-[11px] text-[#6B665C] tabular-nums transition-colors hover:border-[#9A6B2F] hover:text-[#111110]"
             >
               <span>/test</span>
               <ArrowUpRight className="h-3 w-3" />
@@ -907,12 +867,11 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       </header>
 
       <div ref={stageRef}>
-        {activeMode === 'embed' && (
+        {activeMode === 'embed' && embedStage === 'compose' && (
           <main className="relative h-[calc(100dvh-3.5rem)] w-full overflow-hidden">
             {/* Layer 1: Top Full-Width Slider */}
             <div
               ref={topSliderRef}
-              aria-hidden={!isCompose}
               className="absolute top-0 right-0 left-0 z-20 pt-4 will-change-transform"
             >
               <TopSampleSlider
@@ -920,7 +879,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 selectedSampleKey={selectedSampleKey}
                 samplesLoading={samplesLoading}
                 samplesError={samplesError}
-                disabled={isTransitioningOut || isEmbedding || !isCompose}
+                disabled={isTransitioningOut}
                 onSelectSample={(sample) => setSelectedSample(sample)}
                 onRetry={() => {
                   setSamplesLoading(true);
@@ -930,113 +889,40 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               />
             </div>
 
-            {/* Layer 2: Hero Sample Layer (centered via xPercent: 50 in compose, glides to xPercent: 0 left 50% on embed) */}
+            {/* Layer 2: Centered Hero Sample */}
             <section
-              ref={heroPaneRef}
-              className="absolute inset-y-0 left-0 z-10 flex w-full flex-col justify-between p-4 sm:p-5 lg:w-1/2 lg:p-7 will-change-transform"
+              ref={heroSectionRef}
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center p-4 sm:p-6 will-change-transform"
             >
-              {/* Left-pane top bar (revealed at t = 0.62s) */}
-              <div
-                aria-hidden={isCompose}
-                className="split-left-chrome invisible pointer-events-none flex shrink-0 items-center justify-between gap-2 opacity-0"
-              >
-                <button
-                  type="button"
-                  onClick={handleBackToCompose}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[#E4DFD3] bg-[#FDFCF9] px-3.5 py-1.5 text-xs font-medium text-[#111110] transition-colors hover:border-[#111110]"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  <span>New Embed</span>
-                </button>
-
-                <span className="font-mono-tabular text-[10px] font-medium uppercase tracking-[0.16em] text-[#9A6B2F]">
-                  Original Cover
-                </span>
-              </div>
-
-              {/* Persistent Hero Square Frame */}
-              <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center px-4 py-2">
-                <div className="relative flex items-center justify-center">
-                  <div
-                    ref={sampleFrameRef}
-                    className="relative aspect-square w-[clamp(190px,35vh,340px)] overflow-hidden rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] shadow-[0_24px_60px_-32px_rgba(17,17,16,0.28)] will-change-transform"
-                  >
-                    {displaySample ? (
-                      <img
-                        ref={heroImgRef}
-                        src={displaySample.image_url}
-                        alt={`${displaySample.motif} ${displaySample.filename}`}
-                        className="h-full w-full object-cover will-change-transform"
-                      />
-                    ) : (
-                      <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
-                    )}
-                    {embedStage === 'overview' && (
-                      <>
-                        <div
-                          ref={coverScanlineRef}
-                          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2px] bg-[#9A6B2F] opacity-0 shadow-[0_0_16px_4px_rgba(154,107,47,0.45)]"
-                        />
-                        <div
-                          ref={coverReticleRef}
-                          className="pointer-events-none absolute top-[12%] left-[12%] z-10 h-9 w-9 -translate-x-1/2 -translate-y-1/2 opacity-0"
-                        >
-                          <span className="absolute top-0 left-0 h-2.5 w-2.5 border-t-2 border-l-2 border-[#9A6B2F]" />
-                          <span className="absolute top-0 right-0 h-2.5 w-2.5 border-t-2 border-r-2 border-[#9A6B2F]" />
-                          <span className="absolute bottom-0 left-0 h-2.5 w-2.5 border-b-2 border-l-2 border-[#9A6B2F]" />
-                          <span className="absolute right-0 bottom-0 h-2.5 w-2.5 border-r-2 border-b-2 border-[#9A6B2F]" />
-                          <span className="absolute top-1/2 left-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#9A6B2F]" />
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {displaySample && (
-                    <div
-                      aria-hidden={!isCompose}
-                      className="pointer-events-none absolute top-full left-1/2 mt-3 -translate-x-1/2"
-                    >
-                      <div
-                        ref={composeCaptionRef}
-                        className="compose-hero-caption whitespace-nowrap rounded-full border border-[#E4DFD3] bg-[#FDFCF9]/90 px-2.5 py-0.5 font-mono-tabular text-[11px] text-[#6B665C] will-change-transform"
-                      >
-                        {displaySample.filename}
-                      </div>
-                    </div>
+              <div className="relative flex items-center justify-center">
+                <div className="relative aspect-square w-[clamp(190px,35vh,340px)] overflow-hidden rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] shadow-[0_24px_60px_-32px_rgba(17,17,16,0.28)]">
+                  {selectedSample ? (
+                    <img
+                      ref={heroImgRef}
+                      src={selectedSample.image_url}
+                      alt={`${selectedSample.motif} ${selectedSample.filename}`}
+                      className="h-full w-full object-cover will-change-transform"
+                    />
+                  ) : (
+                    <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
                   )}
                 </div>
-              </div>
 
-              {/* Left-pane footer (revealed at t = 0.62s) */}
-              <div
-                aria-hidden={isCompose}
-                className="split-left-chrome invisible pointer-events-none flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[#E4DFD3] pt-3 font-mono-tabular text-[11px] text-[#6B665C] opacity-0"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="font-editorial text-base capitalize text-[#111110]">
-                    {coverMotif}
-                  </span>
-                  <span>/</span>
-                  <span className="text-[#111110]">{coverFilename}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span>
-                    {displaySample
-                      ? `${displaySample.width} × ${displaySample.height} RGB`
-                      : '512 × 512 RGB'}
-                  </span>
-                  <span className="font-semibold text-[#111110]">
-                    {formatBytes(activePayloadBytes)}
-                  </span>
-                </div>
+                {selectedSample && (
+                  <div className="pointer-events-none absolute top-full left-1/2 mt-3 -translate-x-1/2">
+                    <div
+                      ref={composeCaptionRef}
+                      className="compose-hero-caption whitespace-nowrap rounded-full border border-[#E4DFD3] bg-[#FDFCF9]/90 px-2.5 py-0.5 text-[11px] text-[#6B665C] tabular-nums will-change-transform"
+                    >
+                      {selectedSample.filename}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
 
             {/* Layer 3: Bottom Message Composer */}
-            <div
-              aria-hidden={!isCompose}
-              className="pointer-events-none absolute bottom-0 left-1/2 z-20 w-full max-w-[520px] -translate-x-1/2 px-4 pb-5"
-            >
+            <div className="pointer-events-none absolute bottom-0 left-1/2 z-20 w-full max-w-[520px] -translate-x-1/2 px-4 pb-5">
               <div
                 ref={bottomComposerRef}
                 className="compose-bottom-composer pointer-events-auto w-full will-change-transform"
@@ -1046,7 +932,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                   rows={2}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  disabled={isTransitioningOut || isEmbedding || !isCompose}
+                  disabled={isTransitioningOut}
                   placeholder="Write a secret message..."
                   aria-label="Secret message"
                   className="w-full resize-none rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-3.5 py-2.5 text-xs leading-relaxed text-[#111110] placeholder:text-[#6B665C]/65 transition-colors focus:border-[#9A6B2F] focus:outline-none disabled:opacity-70 sm:text-[13px]"
@@ -1060,9 +946,9 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                         <button
                           key={preset.label}
                           type="button"
-                          disabled={isEmbedding || isTransitioningOut || !isCompose}
+                          disabled={isTransitioningOut}
                           onClick={() => setMessage(generateDeterministicPayload(preset.bytes))}
-                          className={`rounded-full border px-2.5 py-1 font-mono-tabular text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium tabular-nums transition-colors disabled:opacity-50 ${
                             activePreset
                               ? 'border-[#9A6B2F] bg-[#FDFCF9] text-[#9A6B2F]'
                               : 'border-[#E4DFD3] bg-[#FDFCF9] text-[#111110] hover:border-[#9A6B2F]'
@@ -1073,13 +959,13 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                       );
                     })}
 
-                    <span className="ml-1 font-mono-tabular text-[11px] text-[#6B665C]">
+                    <span className="ml-1 text-[11px] text-[#6B665C] tabular-nums">
                       {formatBytes(payloadBytes)}
                     </span>
 
                     {s1Overflow && (
                       <span
-                        className="rounded-full border border-[#B45309]/35 bg-[#B45309]/10 px-2 py-0.5 font-mono-tabular text-[10px] font-medium text-[#B45309]"
+                        className="rounded-full border border-[#B45309]/35 bg-[#B45309]/10 px-2 py-0.5 text-[10px] font-medium text-[#B45309] tabular-nums"
                         title={
                           s1Max !== null
                             ? `Exceeds Scheme 1 max (${formatBytes(s1Max)}); Scheme 2 & 3 embed cleanly`
@@ -1094,13 +980,13 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                   <button
                     type="button"
                     onClick={handleEmbed}
-                    disabled={!selectedSample || isEmbedding || isTransitioningOut || !isCompose}
+                    disabled={!selectedSample || isTransitioningOut}
                     className="inline-flex items-center gap-2 rounded-full bg-[#111110] px-5 py-2 text-xs font-semibold tracking-wide text-[#FDFCF9] transition-colors hover:bg-[#9A6B2F] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-[#D5CEBE] disabled:text-[#6B665C]"
                   >
-                    {isEmbedding || isTransitioningOut ? (
+                    {isTransitioningOut ? (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        <span>Embedding…</span>
+                        <span>Starting…</span>
                       </>
                     ) : (
                       <>
@@ -1118,55 +1004,44 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 )}
               </div>
             </div>
+          </main>
+        )}
 
-            {/* Layer 4: Right 50% Stego Results Layer */}
-            <div
-              ref={rightPaneRef}
-              aria-hidden={isCompose}
-              className="invisible pointer-events-none absolute inset-y-0 right-0 z-10 flex w-full flex-col bg-[#F6F4EF] opacity-0 lg:w-1/2 lg:border-l lg:border-[#E4DFD3] will-change-transform"
+        {activeMode === 'embed' && embedStage === 'results' && activeRunMeta && (
+          <main className="mx-auto max-w-[1520px] px-4 py-4 sm:px-6 sm:py-5">
+            {embedError && (
+              <div className="mb-3 flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2 text-xs text-rose-900">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-700" />
+                <span>{embedError}</span>
+              </div>
+            )}
+
+            {/* Top Row: 4-Image Comparison Layout */}
+            <FourImageComparison
+              coverImageUrl={activeRunMeta.imageUrl}
+              motif={activeRunMeta.motif}
+              filename={activeRunMeta.filename}
+              width={activeRunMeta.width}
+              height={activeRunMeta.height}
+              payloadBytes={activeRunMeta.payloadBytes}
+              viewMode={viewMode}
+              schemes={schemeStates}
+              hasPendingPacing={hasPendingPacing}
+              onBackToCompose={handleBackToCompose}
+              onChangeViewMode={setViewMode}
+              onSkipPacing={handleSkipPacing}
+              onExtractFile={handleExtractFile}
+            />
+
+            {/* Bottom Row: 3 Independent Persistent Scrollable Calculation Log Panels */}
+            <section
+              aria-label="Per-scheme calculation logs"
+              className="mt-3.5 grid grid-cols-1 gap-3 lg:grid-cols-3"
             >
-              <div className="flex shrink-0 items-center justify-between border-b border-[#E4DFD3] px-4 py-2.5 lg:hidden">
-                <button
-                  type="button"
-                  onClick={handleBackToCompose}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[#E4DFD3] bg-[#FDFCF9] px-3 py-1 text-xs font-medium text-[#111110] transition-colors hover:border-[#111110]"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  <span>New Embed</span>
-                </button>
-                <span className="font-mono-tabular text-[11px] text-[#6B665C]">
-                  {coverFilename} · {formatBytes(activePayloadBytes)}
-                </span>
-              </div>
-
-              <div className="min-h-0 flex-1">
-                {embedStage === 'focus' && embedResult && focusedScheme ? (
-                  <StegoFocusPane
-                    embedResult={embedResult}
-                    focusedScheme={focusedScheme}
-                    viewMode={viewMode}
-                    onSwitchScheme={handleSwitchFocusedScheme}
-                    onShowAll={handleReturnToOverview}
-                    onChangeViewMode={setViewMode}
-                    onExtractFile={handleExtractFile}
-                  />
-                ) : (
-                  <StegoOverviewPane
-                    embedResult={embedResult}
-                    coverImageUrl={displaySample?.image_url ?? ''}
-                    imageWidth={displaySample?.width ?? 512}
-                    imageHeight={displaySample?.height ?? 512}
-                    isEmbedding={isEmbedding}
-                    isIntroTransitioning={isTransitioningOut}
-                    initialCompleted={hasCompletedRaster}
-                    coverReticleRef={coverReticleRef}
-                    coverScanlineRef={coverScanlineRef}
-                    onRasterComplete={() => setHasCompletedRaster(true)}
-                    onSelectScheme={handleSelectOverviewScheme}
-                  />
-                )}
-              </div>
-            </div>
+              {ALL_SCHEMES.map((schemeName) => (
+                <SchemeCalculationLog key={schemeName} state={schemeStates[schemeName]} />
+              ))}
+            </section>
           </main>
         )}
 

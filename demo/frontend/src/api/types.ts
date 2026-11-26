@@ -70,6 +70,57 @@ export interface CalculationStep {
   frem_before: number;
   frem_after: number;
   indicator?: number;
+  fobp_triggered?: boolean;
+}
+
+export interface SchemeAnalysis {
+  width: number;
+  height: number;
+  payload_bytes: number;
+  required_bits: number;
+  capacity: CapacitySummary;
+}
+
+export type EmbedStreamEvent =
+  | {
+      type: 'scheme_start';
+      scheme: SchemeName;
+      width: number;
+      height: number;
+      payload_bytes: number;
+      required_bits: number;
+      capacity: CapacitySummary;
+    }
+  | {
+      type: 'scheme_step';
+      scheme: SchemeName;
+      step_index: number;
+      total_steps: number;
+      step: CalculationStep;
+    }
+  | {
+      type: 'scheme_result';
+      scheme: SchemeName;
+      result: SchemeEmbedResult;
+    }
+  | {
+      type: 'done';
+      motif: string;
+      filename: string;
+      payload_bytes: number;
+    };
+
+export type LiveSchemeStatus = 'processing' | 'completed' | 'overflow' | 'failed';
+
+export interface SchemeLiveState {
+  scheme: SchemeName;
+  status: LiveSchemeStatus;
+  analysis: SchemeAnalysis | null;
+  steps: CalculationStep[];
+  totalSteps: number;
+  result: SchemeEmbedResult | null;
+  pendingStegoBase64: string | null;
+  errorMessage: string | null;
 }
 
 export interface CalculationTrace {
