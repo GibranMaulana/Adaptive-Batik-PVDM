@@ -57,6 +57,9 @@ class SchemeEmbedResult(BaseModel):
     ssim: dict[str, float] | None = None
     stego_png_base64: str | None = None
     heatmap_png_base64: str | None = None
+    # Read-only observations of the engine output for the live demo UI.  This
+    # does not alter the PVDM algorithm or the generated stego image.
+    calculation_trace: dict[str, object] | None = None
 
 
 class EmbedResponse(BaseModel):

@@ -7,6 +7,7 @@ import type { EmbedResponse, HealthResponse, SampleSummary, SchemeName } from '.
 import { HiFiExtractor, type HiFiPreloadExtract } from '../components/hifi/HiFiExtractor';
 import type { GalleryViewMode } from '../components/hifi/SchemeResultCard';
 import { StegoFocusPane } from '../components/hifi/StegoFocusPane';
+import { LiveEmbeddingPane } from '../components/hifi/LiveEmbeddingPane';
 import { StegoOverviewPane } from '../components/hifi/StegoOverviewPane';
 import { TopSampleSlider } from '../components/hifi/TopSampleSlider';
 import {
@@ -92,6 +93,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
   const embedRequestIdRef = useRef(0);
   const extractCounterRef = useRef(0);
+  const liveTimerRef = useRef<number | null>(null);
 
   const [activeMode, setActiveMode] = useState<ActiveMode>('embed');
   const [embedStage, setEmbedStage] = useState<EmbedStage>('compose');
@@ -100,6 +102,12 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   useEffect(() => {
     embedStageRef.current = embedStage;
   }, [embedStage]);
+
+  useEffect(() => {
+    return () => {
+      if (liveTimerRef.current !== null) window.clearTimeout(liveTimerRef.current);
+    };
+  }, []);
 
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthOffline, setHealthOffline] = useState(false);
@@ -115,6 +123,9 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const [embedError, setEmbedError] = useState<string | null>(null);
   const [embedResult, setEmbedResult] = useState<EmbedResponse | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('stego');
+  const [liveSchemeIndex, setLiveSchemeIndex] = useState<number | null>(null);
+  const [liveStepIndex, setLiveStepIndex] = useState(0);
+  const [revealedSchemes, setRevealedSchemes] = useState<Set<SchemeName>>(() => new Set());
 
   const [preloadExtract, setPreloadExtract] = useState<HiFiPreloadExtract | null>(null);
 
@@ -622,6 +633,34 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     }
   };
 
+  const startLiveReplay = (response: EmbedResponse, schemeIndex = 0) => {
+    if (schemeIndex >= ALL_SCHEMES.length) {
+      setLiveSchemeIndex(null);
+      return;
+    }
+    const scheme = ALL_SCHEMES[schemeIndex];
+    const result = response.results.find((item) => item.scheme === scheme);
+    const steps = result?.calculation_trace?.steps ?? [];
+    let nextStep = 0;
+    setLiveSchemeIndex(schemeIndex);
+    setLiveStepIndex(0);
+
+    const finish = () => {
+      setRevealedSchemes((current) => new Set([...current, scheme]));
+      liveTimerRef.current = window.setTimeout(() => startLiveReplay(response, schemeIndex + 1), 520);
+    };
+    const advance = () => {
+      nextStep += 1;
+      if (nextStep >= steps.length) {
+        finish();
+        return;
+      }
+      setLiveStepIndex(nextStep);
+      liveTimerRef.current = window.setTimeout(advance, 520);
+    };
+    liveTimerRef.current = window.setTimeout(steps.length > 1 ? advance : finish, 720);
+  };
+
   const handleEmbed = () => {
     if (!selectedSample || isEmbedding || isTransitioningOut) return;
 
@@ -631,6 +670,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     setIsEmbedding(true);
     setEmbedError(null);
     setEmbedResult(null);
+    if (liveTimerRef.current !== null) window.clearTimeout(liveTimerRef.current);
+    setLiveSchemeIndex(null);
+    setLiveStepIndex(0);
+    setRevealedSchemes(new Set());
     setFocusedScheme(null);
     prevFocusedSchemeRef.current = null;
     returningFromFocusRef.current = false;
@@ -647,6 +690,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         if (embedRequestIdRef.current !== reqId) return;
         setEmbedResult(response);
         setIsEmbedding(false);
+        liveTimerRef.current = window.setTimeout(() => startLiveReplay(response), 1100);
       })
       .catch((err) => {
         if (embedRequestIdRef.current !== reqId) return;
@@ -773,6 +817,9 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const handleBackToCompose = () => {
     embedRequestIdRef.current += 1;
     setIsEmbedding(false);
+    if (liveTimerRef.current !== null) window.clearTimeout(liveTimerRef.current);
+    setLiveSchemeIndex(null);
+    setRevealedSchemes(new Set());
     runBackToComposeAnimation(true);
   };
 
@@ -964,6 +1011,14 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                     ) : (
                       <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
                     )}
+                    {liveSchemeIndex !== null && (
+                      <>
+                        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[#9A6B2F] shadow-[0_0_18px_5px_rgba(154,107,47,0.45)] motion-safe:animate-[scan_1.7s_ease-in-out_infinite]" />
+                        <div className="pointer-events-none absolute right-3 bottom-3 rounded-full border border-[#FDFCF9]/80 bg-[#111110]/75 px-2 py-1 font-mono-tabular text-[9px] font-semibold uppercase tracking-wider text-[#FDFCF9] backdrop-blur-sm">
+                          Writing pixels · 0{liveSchemeIndex + 1}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {displaySample && (
@@ -1115,7 +1170,14 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               </div>
 
               <div className="min-h-0 flex-1">
-                {embedStage === 'focus' && embedResult && focusedScheme ? (
+                {liveSchemeIndex !== null ? (
+                  <LiveEmbeddingPane
+                    embedResult={embedResult}
+                    activeIndex={liveSchemeIndex}
+                    stepIndex={liveStepIndex}
+                    completed={revealedSchemes}
+                  />
+                ) : embedStage === 'focus' && embedResult && focusedScheme ? (
                   <StegoFocusPane
                     embedResult={embedResult}
                     focusedScheme={focusedScheme}

@@ -24,6 +24,7 @@ from demo.backend.schemas import (  # noqa: E402
     SampleSummary,
     SchemeEmbedResult,
 )
+from demo.backend.trace import build_calculation_trace  # noqa: E402
 from src.evaluation_metrics import compute_psnr, compute_ssim  # noqa: E402
 from src.pvdm_rgb_batik import (  # noqa: E402
     scheme1_capacity,
@@ -163,6 +164,7 @@ def embed_all(cover: Image.Image, payload: bytes) -> list[SchemeEmbedResult]:
                     ssim=compute_ssim(cover, stego),
                     stego_png_base64=png_base64(stego),
                     heatmap_png_base64=png_base64(difference_heatmap(cover, stego)),
+                    calculation_trace=build_calculation_trace(name, cover, stego, payload),
                 )
             )
         except Exception as exc:  # Each scheme reports failure independently.

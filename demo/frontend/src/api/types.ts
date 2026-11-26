@@ -50,6 +50,31 @@ export interface SchemeEmbedResult {
   ssim: Record<string, number | null> | null;
   stego_png_base64: string | null;
   heatmap_png_base64: string | null;
+  calculation_trace: CalculationTrace | null;
+}
+
+export interface CalculationStep {
+  row: number;
+  columns: [number, number];
+  channel: 'R' | 'G' | 'B';
+  before: [number, number];
+  after: [number, number];
+  difference_before: number;
+  difference_after: number;
+  range: [number, number];
+  bits: number;
+  payload_bits: string;
+  payload_value: number;
+  frem_before: number;
+  frem_after: number;
+  indicator?: number;
+}
+
+export interface CalculationTrace {
+  kind: 'observed_engine_output';
+  payload_bits: number;
+  displayed_steps: number;
+  steps: CalculationStep[];
 }
 
 export interface EmbedResponse {
