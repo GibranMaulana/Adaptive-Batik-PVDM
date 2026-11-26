@@ -28,7 +28,7 @@ from demo.backend.schemas import (  # noqa: E402
     SampleSummary,
     SchemeEmbedResult,
 )
-from demo.backend.trace import build_calculation_trace  # noqa: E402
+from demo.backend.trace import build_calculation_trace, build_row_trace  # noqa: E402
 from src.evaluation_metrics import compute_psnr, compute_ssim  # noqa: E402
 from src.pvdm_rgb_batik import (  # noqa: E402
     scheme1_capacity,
@@ -152,6 +152,69 @@ def _scheme_capacity(name: str, cover: Image.Image) -> CapacitySummary:
     return _capacity_summary(capacity_fn(cover))
 
 
+def _embed_single_scheme_with_trace(
+    name: str,
+    cover: Image.Image,
+    payload: bytes,
+    capacity: CapacitySummary | None = None,
+    *,
+    include_row_trace: bool = False,
+) -> tuple[SchemeEmbedResult, list[dict[str, object]]]:
+    """Run a single PVDM scheme independently and optionally build uncapped row trace."""
+    embed_fn, _, capacity_fn = _SCHEMES[name]
+    resolved_capacity = (
+        capacity if capacity is not None else _capacity_summary(capacity_fn(cover))
+    )
+    required_bits = (len(payload) + 4) * 8
+    if required_bits > resolved_capacity.capacity_bits:
+        return (
+            SchemeEmbedResult(
+                scheme=name,
+                status="overflow",
+                error=(
+                    f"Payload + 32-bit header requires {required_bits} bits; "
+                    f"{name} capacity is {resolved_capacity.capacity_bits} bits "
+                    f"({resolved_capacity.max_payload_bytes} payload bytes maximum)."
+                ),
+                capacity=resolved_capacity,
+            ),
+            [],
+        )
+
+    started = time.perf_counter()
+    try:
+        stego, embed_stats = embed_fn(cover, payload)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        rows = (
+            build_row_trace(name, cover, stego, payload) if include_row_trace else []
+        )
+        return (
+            SchemeEmbedResult(
+                scheme=name,
+                status="ok",
+                elapsed_ms=round(elapsed_ms, 3),
+                capacity=resolved_capacity,
+                embed_stats=embed_stats,
+                psnr=compute_psnr(cover, stego),
+                ssim=compute_ssim(cover, stego),
+                stego_png_base64=png_base64(stego),
+                heatmap_png_base64=png_base64(difference_heatmap(cover, stego)),
+                calculation_trace=build_calculation_trace(name, cover, stego, payload),
+            ),
+            rows,
+        )
+    except Exception as exc:  # Each scheme reports failure independently.
+        return (
+            SchemeEmbedResult(
+                scheme=name,
+                status="failed",
+                error=str(exc),
+                capacity=resolved_capacity,
+            ),
+            [],
+        )
+
+
 def embed_single_scheme(
     name: str,
     cover: Image.Image,
@@ -159,46 +222,10 @@ def embed_single_scheme(
     capacity: CapacitySummary | None = None,
 ) -> SchemeEmbedResult:
     """Run a single PVDM scheme independently so overflows/failures remain isolated."""
-    embed_fn, _, capacity_fn = _SCHEMES[name]
-    resolved_capacity = (
-        capacity if capacity is not None else _capacity_summary(capacity_fn(cover))
+    result, _ = _embed_single_scheme_with_trace(
+        name, cover, payload, capacity, include_row_trace=False
     )
-    required_bits = (len(payload) + 4) * 8
-    if required_bits > resolved_capacity.capacity_bits:
-        return SchemeEmbedResult(
-            scheme=name,
-            status="overflow",
-            error=(
-                f"Payload + 32-bit header requires {required_bits} bits; "
-                f"{name} capacity is {resolved_capacity.capacity_bits} bits "
-                f"({resolved_capacity.max_payload_bytes} payload bytes maximum)."
-            ),
-            capacity=resolved_capacity,
-        )
-
-    started = time.perf_counter()
-    try:
-        stego, embed_stats = embed_fn(cover, payload)
-        elapsed_ms = (time.perf_counter() - started) * 1000
-        return SchemeEmbedResult(
-            scheme=name,
-            status="ok",
-            elapsed_ms=round(elapsed_ms, 3),
-            capacity=resolved_capacity,
-            embed_stats=embed_stats,
-            psnr=compute_psnr(cover, stego),
-            ssim=compute_ssim(cover, stego),
-            stego_png_base64=png_base64(stego),
-            heatmap_png_base64=png_base64(difference_heatmap(cover, stego)),
-            calculation_trace=build_calculation_trace(name, cover, stego, payload),
-        )
-    except Exception as exc:  # Each scheme reports failure independently.
-        return SchemeEmbedResult(
-            scheme=name,
-            status="failed",
-            error=str(exc),
-            capacity=resolved_capacity,
-        )
+    return result
 
 
 def embed_all(cover: Image.Image, payload: bytes) -> list[SchemeEmbedResult]:
@@ -237,12 +264,13 @@ async def embed_stream(
     async def _run_scheme(name: str, capacity: CapacitySummary) -> None:
         try:
             try:
-                result = await asyncio.to_thread(
-                    embed_single_scheme,
+                result, rows = await asyncio.to_thread(
+                    _embed_single_scheme_with_trace,
                     name,
                     cover_copies[name],
                     payload,
                     capacity,
+                    include_row_trace=True,
                 )
             except Exception as exc:
                 result = SchemeEmbedResult(
@@ -251,19 +279,18 @@ async def embed_stream(
                     error=str(exc),
                     capacity=capacity,
                 )
+                rows = []
 
-            trace = result.calculation_trace
-            if trace and isinstance(trace.get("steps"), list):
-                steps = trace["steps"]
-                total_steps = len(steps)
-                for step_index, step in enumerate(steps):
+            if result.status == "ok" and rows:
+                total_rows = len(rows)
+                for row_index, row_data in enumerate(rows):
                     queue.put_nowait(
                         {
-                            "type": "scheme_step",
+                            "type": "scheme_row",
                             "scheme": name,
-                            "step_index": step_index,
-                            "total_steps": total_steps,
-                            "step": step,
+                            "row_index": row_index,
+                            "total_rows": total_rows,
+                            "row": row_data,
                         }
                     )
 
