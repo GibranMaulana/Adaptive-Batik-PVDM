@@ -8,6 +8,7 @@ import {
   formatMetric,
   getFobpCount,
   getFobpPerChannel,
+  getPsnrChannel,
   getPsnrTotal,
   getStegoFilename,
 } from '../utils/payload';
@@ -169,7 +170,7 @@ export function SchemeComparison({
                       </td>
                       <td className="px-3 py-2 text-slate-700">
                         {res.psnr
-                          ? `${formatMetric(res.psnr.psnr_r, 2)} / ${formatMetric(res.psnr.psnr_g, 2)} / ${formatMetric(res.psnr.psnr_b, 2)}`
+                          ? `${formatMetric(getPsnrChannel(res.psnr, 'r'), 2)} / ${formatMetric(getPsnrChannel(res.psnr, 'g'), 2)} / ${formatMetric(getPsnrChannel(res.psnr, 'b'), 2)}`
                           : '—'}
                       </td>
                       <td className="px-3 py-2 text-slate-900">

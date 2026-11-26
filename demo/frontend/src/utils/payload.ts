@@ -71,10 +71,31 @@ export function formatMetric(value: number | null | undefined, digits = 2): stri
   return value.toFixed(digits);
 }
 
-export function getPsnrTotal(psnr: Record<string, number> | null | undefined): number | null {
+export function getPsnrTotal(
+  psnr: Record<string, number | null> | null | undefined,
+): number | null {
   if (!psnr) return null;
-  if (typeof psnr.psnr_total === 'number') return psnr.psnr_total;
-  if (typeof psnr.psnr_rgb === 'number') return psnr.psnr_rgb;
+  const raw = psnr.psnr_total !== undefined ? psnr.psnr_total : psnr.psnr_rgb;
+  if (typeof raw === 'number') return raw;
+  if (
+    (raw === null || raw === undefined) &&
+    (psnr.mse_total === 0 || psnr.mse_rgb === 0)
+  ) {
+    return Infinity;
+  }
+  return null;
+}
+
+export function getPsnrChannel(
+  psnr: Record<string, number | null> | null | undefined,
+  channel: 'r' | 'g' | 'b',
+): number | null {
+  if (!psnr) return null;
+  const raw = psnr[`psnr_${channel}`];
+  if (typeof raw === 'number') return raw;
+  if ((raw === null || raw === undefined) && psnr[`mse_${channel}`] === 0) {
+    return Infinity;
+  }
   return null;
 }
 

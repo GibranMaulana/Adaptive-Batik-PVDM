@@ -46,8 +46,8 @@ export interface SchemeEmbedResult {
   elapsed_ms: number | null;
   capacity: CapacitySummary | null;
   embed_stats: Record<string, unknown> | null;
-  psnr: Record<string, number> | null;
-  ssim: Record<string, number> | null;
+  psnr: Record<string, number | null> | null;
+  ssim: Record<string, number | null> | null;
   stego_png_base64: string | null;
   heatmap_png_base64: string | null;
 }

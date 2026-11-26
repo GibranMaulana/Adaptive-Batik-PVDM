@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import {
   AlertTriangle,
@@ -40,19 +40,25 @@ export function BlindExtractor({ preloadRequest }: BlindExtractorProps) {
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractResult, setExtractResult] = useState<ExtractResponse | null>(null);
   const [copied, setCopied] = useState(false);
-
-  const previewUrl = useMemo(
-    () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
-    [selectedFile],
-  );
+  const [previewState, setPreviewState] = useState<{ file: File; url: string } | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
+    if (!selectedFile) return;
+    let active = true;
+    const objectUrl = URL.createObjectURL(selectedFile);
+    queueMicrotask(() => {
+      if (active) {
+        setPreviewState({ file: selectedFile, url: objectUrl });
       }
+    });
+    return () => {
+      active = false;
+      URL.revokeObjectURL(objectUrl);
     };
-  }, [previewUrl]);
+  }, [selectedFile]);
+
+  const previewUrl =
+    selectedFile && previewState?.file === selectedFile ? previewState.url : null;
 
   const runExtraction = useCallback(async (file: File, mode: SchemeMode) => {
     const seq = ++requestSeqRef.current;
