@@ -21,7 +21,7 @@ import {
 gsap.registerPlugin(useGSAP);
 
 type ActiveMode = 'embed' | 'extract';
-type EmbedStage = 'compose' | 'overview' | 'focus';
+type EmbedStage = 'compose' | 'live' | 'overview' | 'focus';
 
 interface HiFiConverterProps {
   onNavigate: (path: string) => void;
@@ -85,7 +85,11 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
   const activeTimelineRef = useRef<gsap.core.Timeline | null>(null);
   const returningFromFocusRef = useRef(false);
+  const enteringOverviewFromLiveRef = useRef(false);
   const embedStageRef = useRef<EmbedStage>('compose');
+
+  const coverReticleRef = useRef<HTMLDivElement | null>(null);
+  const coverScanlineRef = useRef<HTMLDivElement | null>(null);
 
   const prevSampleKeyRef = useRef<string>('');
   const prevFocusedSchemeRef = useRef<SchemeName | null>(null);
@@ -93,7 +97,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
   const embedRequestIdRef = useRef(0);
   const extractCounterRef = useRef(0);
-  const liveTimerRef = useRef<number | null>(null);
 
   const [activeMode, setActiveMode] = useState<ActiveMode>('embed');
   const [embedStage, setEmbedStage] = useState<EmbedStage>('compose');
@@ -102,12 +105,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   useEffect(() => {
     embedStageRef.current = embedStage;
   }, [embedStage]);
-
-  useEffect(() => {
-    return () => {
-      if (liveTimerRef.current !== null) window.clearTimeout(liveTimerRef.current);
-    };
-  }, []);
 
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthOffline, setHealthOffline] = useState(false);
@@ -124,8 +121,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const [embedResult, setEmbedResult] = useState<EmbedResponse | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('stego');
   const [liveSchemeIndex, setLiveSchemeIndex] = useState<number | null>(null);
-  const [liveStepIndex, setLiveStepIndex] = useState(0);
-  const [revealedSchemes, setRevealedSchemes] = useState<Set<SchemeName>>(() => new Set());
 
   const [preloadExtract, setPreloadExtract] = useState<HiFiPreloadExtract | null>(null);
 
@@ -360,8 +355,11 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         (context) => {
           if (context.conditions?.reduceMotion) {
             returningFromFocusRef.current = false;
+            enteringOverviewFromLiveRef.current = false;
             return;
           }
+
+          let reverted = false;
 
           if (embedStage === 'focus') {
             const focusTl = gsap.timeline();
@@ -408,7 +406,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
           }
 
           if (embedStage === 'overview' && returningFromFocusRef.current) {
-            returningFromFocusRef.current = false;
             gsap.fromTo(
               '.stego-overview-slot',
               { scale: 0.97, y: 10, autoAlpha: 0 },
@@ -420,9 +417,54 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 stagger: 0.06,
                 ease: 'power3.out',
                 clearProps: 'transform,opacity,visibility',
+                onComplete: () => {
+                  if (!reverted) {
+                    returningFromFocusRef.current = false;
+                  }
+                },
               },
             );
+          } else if (embedStage === 'overview' && enteringOverviewFromLiveRef.current) {
+            const overviewTl = gsap.timeline({
+              onComplete: () => {
+                if (!reverted) {
+                  enteringOverviewFromLiveRef.current = false;
+                }
+              },
+            });
+            overviewTl.fromTo(
+              '.stego-overview-slot',
+              { x: 28, autoAlpha: 0 },
+              {
+                x: 0,
+                autoAlpha: 1,
+                duration: 0.44,
+                stagger: 0.08,
+                ease: 'power3.out',
+                clearProps: 'transform,opacity,visibility',
+              },
+              0,
+            );
+            if (embedResult) {
+              overviewTl.fromTo(
+                '.stego-reveal-image',
+                { opacity: 0, scale: 0.98 },
+                {
+                  opacity: 1,
+                  scale: 1,
+                  duration: 0.42,
+                  stagger: 0.08,
+                  ease: 'power3.out',
+                  clearProps: 'transform,opacity',
+                },
+                0.06,
+              );
+            }
           }
+
+          return () => {
+            reverted = true;
+          };
         },
         stageRef,
       );
@@ -432,10 +474,11 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     { scope: stageRef, dependencies: [activeMode, embedStage] },
   );
 
-  // 4. Fade stego images cleanly into the 3 overview slots as soon as embedResult arrives
+  // 4. Fade stego images cleanly into the 3 overview slots when embedResult arrives directly in overview
   useGSAP(
     () => {
       if (!embedResult || activeMode !== 'embed' || embedStage !== 'overview') return;
+      if (enteringOverviewFromLiveRef.current || returningFromFocusRef.current) return;
 
       const mm = gsap.matchMedia();
       mm.add(
@@ -461,7 +504,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
       return () => mm.revert();
     },
-    { scope: stageRef, dependencies: [embedResult] },
+    { scope: stageRef, dependencies: [embedResult, embedStage] },
   );
 
   // 5. Crisp crossfade/slide when switching between 01 | 02 | 03 in focus stage
@@ -508,6 +551,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     activeTimelineRef.current?.kill();
     activeTimelineRef.current = null;
     returningFromFocusRef.current = false;
+    enteringOverviewFromLiveRef.current = false;
 
     if (clearError) {
       setEmbedError(null);
@@ -633,52 +677,24 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     }
   };
 
-  const startLiveReplay = (response: EmbedResponse, schemeIndex = 0) => {
-    if (schemeIndex >= ALL_SCHEMES.length) {
-      setLiveSchemeIndex(null);
-      return;
-    }
-    const scheme = ALL_SCHEMES[schemeIndex];
-    const result = response.results.find((item) => item.scheme === scheme);
-    const steps = result?.calculation_trace?.steps ?? [];
-    let nextStep = 0;
-    setLiveSchemeIndex(schemeIndex);
-    setLiveStepIndex(0);
-
-    const finish = () => {
-      setRevealedSchemes((current) => new Set([...current, scheme]));
-      liveTimerRef.current = window.setTimeout(() => startLiveReplay(response, schemeIndex + 1), 520);
-    };
-    const advance = () => {
-      nextStep += 1;
-      if (nextStep >= steps.length) {
-        finish();
-        return;
-      }
-      setLiveStepIndex(nextStep);
-      liveTimerRef.current = window.setTimeout(advance, 520);
-    };
-    liveTimerRef.current = window.setTimeout(steps.length > 1 ? advance : finish, 720);
-  };
-
   const handleEmbed = () => {
     if (!selectedSample || isEmbedding || isTransitioningOut) return;
 
     embedRequestIdRef.current += 1;
     const reqId = embedRequestIdRef.current;
+    const reduceMotion = prefersReducedMotion();
+    const targetStage: EmbedStage = reduceMotion ? 'overview' : 'live';
 
     setIsEmbedding(true);
     setEmbedError(null);
     setEmbedResult(null);
-    if (liveTimerRef.current !== null) window.clearTimeout(liveTimerRef.current);
     setLiveSchemeIndex(null);
-    setLiveStepIndex(0);
-    setRevealedSchemes(new Set());
     setFocusedScheme(null);
     prevFocusedSchemeRef.current = null;
     returningFromFocusRef.current = false;
-    embedStageRef.current = 'overview';
-    setEmbedStage('overview');
+    enteringOverviewFromLiveRef.current = false;
+    embedStageRef.current = targetStage;
+    setEmbedStage(targetStage);
 
     // Kick off API call immediately in parallel with the single-stage timeline
     embedPayload({
@@ -690,7 +706,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         if (embedRequestIdRef.current !== reqId) return;
         setEmbedResult(response);
         setIsEmbedding(false);
-        liveTimerRef.current = window.setTimeout(() => startLiveReplay(response), 1100);
       })
       .catch((err) => {
         if (embedRequestIdRef.current !== reqId) return;
@@ -702,7 +717,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
     const isDesktop = isDesktopViewport();
 
-    if (prefersReducedMotion()) {
+    if (reduceMotion) {
       if (topSliderRef.current) {
         gsap.set(topSliderRef.current, { y: -28, autoAlpha: 0 });
       }
@@ -734,7 +749,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     setIsTransitioningOut(true);
 
     if (rightPaneRef.current) {
-      gsap.set(rightPaneRef.current, { x: 0, autoAlpha: 0, pointerEvents: 'none' });
+      gsap.set(rightPaneRef.current, { x: 28, autoAlpha: 0, pointerEvents: 'none' });
     }
 
     const tl = gsap.timeline({
@@ -801,25 +816,36 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       0.62,
     );
 
-    // Step 3 (0.72s): Reveal right 50% pane & stagger 3 stego slots in from the right
+    // Step 3 (0.72s): Reveal right 50% pane in 'live' stage
     if (rightPaneRef.current) {
-      tl.set(rightPaneRef.current, { autoAlpha: 1, pointerEvents: 'auto' }, 0.72);
+      tl.fromTo(
+        rightPaneRef.current,
+        { x: 28, autoAlpha: 0 },
+        {
+          x: 0,
+          autoAlpha: 1,
+          pointerEvents: 'auto',
+          duration: 0.44,
+          ease: 'power3.out',
+          clearProps: 'transform',
+        },
+        0.72,
+      );
     }
-
-    tl.fromTo(
-      '.stego-overview-slot',
-      { x: 40, autoAlpha: 0 },
-      { x: 0, autoAlpha: 1, duration: 0.5, stagger: 0.1, ease: 'power3.out' },
-      0.74,
-    );
   };
+
+  const handleTransitionLiveToOverview = useCallback(() => {
+    if (embedStageRef.current !== 'live') return;
+    setLiveSchemeIndex(null);
+    enteringOverviewFromLiveRef.current = true;
+    embedStageRef.current = 'overview';
+    setEmbedStage('overview');
+  }, []);
 
   const handleBackToCompose = () => {
     embedRequestIdRef.current += 1;
     setIsEmbedding(false);
-    if (liveTimerRef.current !== null) window.clearTimeout(liveTimerRef.current);
     setLiveSchemeIndex(null);
-    setRevealedSchemes(new Set());
     runBackToComposeAnimation(true);
   };
 
@@ -903,7 +929,14 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               type="button"
               role="tab"
               aria-selected={activeMode === 'extract'}
-              onClick={() => setActiveMode('extract')}
+              onClick={() => {
+                if (embedStageRef.current === 'live' && embedResult) {
+                  setLiveSchemeIndex(null);
+                  embedStageRef.current = 'overview';
+                  setEmbedStage('overview');
+                }
+                setActiveMode('extract');
+              }}
               className={`rounded-full px-3.5 py-1 text-xs font-medium transition-colors ${
                 activeMode === 'extract'
                   ? 'bg-[#111110] text-[#FDFCF9]'
@@ -1011,12 +1044,27 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                     ) : (
                       <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
                     )}
-                    {liveSchemeIndex !== null && (
+                    {embedStage === 'live' && (
                       <>
-                        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[#9A6B2F] shadow-[0_0_18px_5px_rgba(154,107,47,0.45)] motion-safe:animate-[scan_1.7s_ease-in-out_infinite]" />
-                        <div className="pointer-events-none absolute right-3 bottom-3 rounded-full border border-[#FDFCF9]/80 bg-[#111110]/75 px-2 py-1 font-mono-tabular text-[9px] font-semibold uppercase tracking-wider text-[#FDFCF9] backdrop-blur-sm">
-                          Writing pixels · 0{liveSchemeIndex + 1}
+                        <div
+                          ref={coverScanlineRef}
+                          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2px] bg-[#9A6B2F] opacity-0 shadow-[0_0_16px_4px_rgba(154,107,47,0.45)]"
+                        />
+                        <div
+                          ref={coverReticleRef}
+                          className="pointer-events-none absolute top-[12%] left-[12%] z-10 h-9 w-9 -translate-x-1/2 -translate-y-1/2 opacity-0"
+                        >
+                          <span className="absolute top-0 left-0 h-2.5 w-2.5 border-t-2 border-l-2 border-[#9A6B2F]" />
+                          <span className="absolute top-0 right-0 h-2.5 w-2.5 border-t-2 border-r-2 border-[#9A6B2F]" />
+                          <span className="absolute bottom-0 left-0 h-2.5 w-2.5 border-b-2 border-l-2 border-[#9A6B2F]" />
+                          <span className="absolute right-0 bottom-0 h-2.5 w-2.5 border-r-2 border-b-2 border-[#9A6B2F]" />
+                          <span className="absolute top-1/2 left-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#9A6B2F]" />
                         </div>
+                        {liveSchemeIndex !== null && (
+                          <div className="pointer-events-none absolute right-3 bottom-3 z-10 rounded-full border border-[#FDFCF9]/80 bg-[#111110]/75 px-2.5 py-1 font-mono-tabular text-[10px] font-semibold uppercase tracking-wider text-[#FDFCF9] backdrop-blur-sm">
+                            Writing pixels · 0{liveSchemeIndex + 1}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -1170,12 +1218,18 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               </div>
 
               <div className="min-h-0 flex-1">
-                {liveSchemeIndex !== null ? (
+                {embedStage === 'live' ? (
                   <LiveEmbeddingPane
                     embedResult={embedResult}
-                    activeIndex={liveSchemeIndex}
-                    stepIndex={liveStepIndex}
-                    completed={revealedSchemes}
+                    coverImageUrl={displaySample?.image_url ?? ''}
+                    imageWidth={displaySample?.width ?? 512}
+                    imageHeight={displaySample?.height ?? 512}
+                    isIntroTransitioning={isTransitioningOut}
+                    coverReticleRef={coverReticleRef}
+                    coverScanlineRef={coverScanlineRef}
+                    onSchemeChange={setLiveSchemeIndex}
+                    onComplete={handleTransitionLiveToOverview}
+                    onSkip={handleTransitionLiveToOverview}
                   />
                 ) : embedStage === 'focus' && embedResult && focusedScheme ? (
                   <StegoFocusPane
