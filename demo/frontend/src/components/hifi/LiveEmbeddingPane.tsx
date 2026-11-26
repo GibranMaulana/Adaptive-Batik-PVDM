@@ -173,7 +173,10 @@ export function LiveEmbeddingPane({
 
       const mm = gsap.matchMedia();
       mm.add(
-        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        {
+          isMotionOk: '(prefers-reduced-motion: no-preference)',
+          reduceMotion: '(prefers-reduced-motion: reduce)',
+        },
         (context) => {
           if (context.conditions?.reduceMotion) {
             onSchemeChangeRef.current?.(null);
@@ -259,7 +262,10 @@ export function LiveEmbeddingPane({
             if (isOk && result) {
               const wipeDuration = okDuration - 0.12;
               const stegoLayer = stegoLayerRefs.current[schemeIdx];
-              const repSteps = pickRepresentativeSteps(result.calculation_trace?.steps ?? []);
+              const traceSteps = Array.isArray(result.calculation_trace?.steps)
+                ? result.calculation_trace.steps
+                : [];
+              const repSteps = pickRepresentativeSteps(traceSteps);
 
               tl.call(
                 () => {
@@ -319,7 +325,7 @@ export function LiveEmbeddingPane({
                 const stepDur = wipeDuration / repSteps.length;
                 repSteps.forEach((step, sIdx) => {
                   const stepStart = schemeStart + sIdx * stepDur;
-                  const bitsArray = step.payload_bits.split('').slice(0, MAX_BIT_CHIPS);
+                  const bitsArray = (step.payload_bits ?? '').split('').slice(0, MAX_BIT_CHIPS);
 
                   tl.call(
                     () => {
@@ -434,6 +440,30 @@ export function LiveEmbeddingPane({
                     );
                   }
                 });
+              } else {
+                tl.call(
+                  () => {
+                    if (reverted) return;
+                    setActiveStepInfo(null);
+                    bitChipRefs.current.forEach((chip) => {
+                      if (!chip) return;
+                      chip.textContent = '';
+                      chip.classList.add('hidden');
+                      chip.classList.remove('inline-flex');
+                    });
+                  },
+                  [],
+                  schemeStart,
+                );
+                if (barXRef.current) {
+                  tl.set(barXRef.current, { scaleY: 0.05 }, schemeStart);
+                }
+                if (barYRef.current) {
+                  tl.set(barYRef.current, { scaleY: 0.05 }, schemeStart);
+                }
+                if (coverReticleRef?.current) {
+                  tl.set(coverReticleRef.current, { autoAlpha: 0 }, schemeStart);
+                }
               }
 
               tl.call(
@@ -739,7 +769,11 @@ export function LiveEmbeddingPane({
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold tabular-nums transition-colors duration-200 ${palette.badgeClass}`}
             >
-              {activeStep ? palette.label : 'Awaiting trace'}
+              {activeStep
+                ? palette.label
+                : isWaitingForEngine || isIntroTransitioning
+                  ? 'Awaiting trace'
+                  : 'Visual wipe'}
             </span>
           </div>
 
@@ -760,7 +794,11 @@ export function LiveEmbeddingPane({
               ))}
               {!activeStep && (
                 <span className="text-[11px] tabular-nums text-[#6B665C]">
-                  {isWaitingForEngine ? 'Waiting for bits…' : '—'}
+                  {isWaitingForEngine
+                    ? 'Waiting for bits…'
+                    : isIntroTransitioning
+                      ? 'Syncing timeline…'
+                      : 'Trace unavailable'}
                 </span>
               )}
             </div>
@@ -891,8 +929,12 @@ export function LiveEmbeddingPane({
             </span>
           ) : overflowMessage ? (
             <span className="text-[#B45309]">{overflowMessage}</span>
-          ) : (
+          ) : isIntroTransitioning ? (
             <span className="text-[#6B665C]">Initializing GSAP simulation timeline…</span>
+          ) : (
+            <span className="text-[#6B665C]">
+              Sweeping {activePill.title} cover → stego wipe (pair trace unavailable)
+            </span>
           )}
         </div>
 

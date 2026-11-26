@@ -213,7 +213,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
       const mm = gsap.matchMedia();
       mm.add(
-        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        {
+          isMotionOk: '(prefers-reduced-motion: no-preference)',
+          reduceMotion: '(prefers-reduced-motion: reduce)',
+        },
         (context) => {
           if (context.conditions?.reduceMotion) return;
 
@@ -245,6 +248,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       mm.add(
         {
           isDesktop: '(min-width: 1024px)',
+          isMotionOk: '(prefers-reduced-motion: no-preference)',
           reduceMotion: '(prefers-reduced-motion: reduce)',
         },
         (context) => {
@@ -351,7 +355,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
       const mm = gsap.matchMedia();
       mm.add(
-        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        {
+          isMotionOk: '(prefers-reduced-motion: no-preference)',
+          reduceMotion: '(prefers-reduced-motion: reduce)',
+        },
         (context) => {
           if (context.conditions?.reduceMotion) {
             returningFromFocusRef.current = false;
@@ -482,7 +489,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
       const mm = gsap.matchMedia();
       mm.add(
-        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        {
+          isMotionOk: '(prefers-reduced-motion: no-preference)',
+          reduceMotion: '(prefers-reduced-motion: reduce)',
+        },
         (context) => {
           if (context.conditions?.reduceMotion) return;
 
@@ -523,7 +533,10 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       const dir = focusSwitchDirRef.current;
       const mm = gsap.matchMedia();
       mm.add(
-        { reduceMotion: '(prefers-reduced-motion: reduce)' },
+        {
+          isMotionOk: '(prefers-reduced-motion: no-preference)',
+          reduceMotion: '(prefers-reduced-motion: reduce)',
+        },
         (context) => {
           if (context.conditions?.reduceMotion) return;
 
