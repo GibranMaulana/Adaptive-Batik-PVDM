@@ -223,3 +223,84 @@ def test_50kb_scheme1_overflow_and_scheme2_3_saved_png_roundtrip(tmp_path):
             ]
             == 0.0
         )
+
+
+def test_embed_calculation_trace_steps_include_valid_rgb_neighbor_triplets():
+    cover_response = client.get("/api/samples/parang/parang_01.png")
+    assert cover_response.status_code == 200
+    with Image.open(io.BytesIO(cover_response.content)) as cover_img:
+        cover = cover_img.convert("RGB")
+
+    body = _embed("Trace RGB triplets verification — Batik")
+    expected_keys = {
+        "row",
+        "columns",
+        "channel",
+        "before",
+        "after",
+        "rgb_before",
+        "rgb_after",
+        "difference_before",
+        "difference_after",
+        "range",
+        "bits",
+        "payload_bits",
+        "payload_value",
+        "frem_before",
+        "frem_after",
+    }
+    channel_indices = {"R": 0, "G": 1, "B": 2}
+
+    assert {result["scheme"] for result in body["results"]} == {
+        "scheme1",
+        "scheme2",
+        "scheme3",
+    }
+
+    for result in body["results"]:
+        assert result["status"] == "ok", result
+        stego = _png_from_result(result, "stego_png_base64")
+        trace = result["calculation_trace"]
+        assert trace is not None
+        steps = trace["steps"]
+        assert len(steps) > 0
+        assert trace["displayed_steps"] == len(steps)
+
+        for step in steps:
+            assert expected_keys.issubset(step.keys())
+            if result["scheme"] == "scheme1":
+                assert "indicator" in step
+
+            row = step["row"]
+            col0, col1 = step["columns"]
+            assert col1 == col0 + 1
+
+            for rgb_key in ("rgb_before", "rgb_after"):
+                pair = step[rgb_key]
+                assert isinstance(pair, list)
+                assert len(pair) == 2
+                for triplet in pair:
+                    assert isinstance(triplet, list)
+                    assert len(triplet) == 3
+                    for value in triplet:
+                        assert isinstance(value, int) and not isinstance(value, bool)
+                        assert 0 <= value <= 255
+
+            channel_idx = channel_indices[step["channel"]]
+            assert [
+                step["rgb_before"][0][channel_idx],
+                step["rgb_before"][1][channel_idx],
+            ] == step["before"]
+            assert [
+                step["rgb_after"][0][channel_idx],
+                step["rgb_after"][1][channel_idx],
+            ] == step["after"]
+
+            assert step["rgb_before"] == [
+                list(cover.getpixel((col0, row))),
+                list(cover.getpixel((col1, row))),
+            ]
+            assert step["rgb_after"] == [
+                list(stego.getpixel((col0, row))),
+                list(stego.getpixel((col1, row))),
+            ]

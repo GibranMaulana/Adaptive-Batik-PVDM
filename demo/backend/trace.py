@@ -28,6 +28,13 @@ def _word(bits: list[int], start: int, length: int) -> tuple[str, int]:
     return "".join(str(bit) for bit in window), int("".join(str(bit) for bit in window), 2)
 
 
+def _rgb_pair(pixels: np.ndarray, row: int, col: int) -> list[list[int]]:
+    return [
+        [int(pixels[row, col, 0]), int(pixels[row, col, 1]), int(pixels[row, col, 2])],
+        [int(pixels[row, col + 1, 0]), int(pixels[row, col + 1, 1]), int(pixels[row, col + 1, 2])],
+    ]
+
+
 def _step(
     *,
     row: int,
@@ -35,6 +42,8 @@ def _step(
     channel: str,
     before: tuple[int, int],
     after: tuple[int, int],
+    rgb_before: list[list[int]],
+    rgb_after: list[list[int]],
     low: int,
     high: int,
     bits: int,
@@ -49,6 +58,8 @@ def _step(
         "channel": channel,
         "before": list(before),
         "after": list(after),
+        "rgb_before": [[int(c) for c in pixel] for pixel in rgb_before],
+        "rgb_after": [[int(c) for c in pixel] for pixel in rgb_after],
         "difference_before": abs(before[0] - before[1]),
         "difference_after": abs(after[0] - after[1]),
         "range": [low, high],
@@ -94,6 +105,8 @@ def build_calculation_trace(
                     steps.append(
                         _step(
                             row=row, col=col, channel=channel, before=before, after=after,
+                            rgb_before=_rgb_pair(source, row, col),
+                            rgb_after=_rgb_pair(target, row, col),
                             low=entry.low, high=entry.high, bits=entry.bits,
                             payload_bits=word, payload_value=value, indicator=indicator,
                         )
@@ -113,7 +126,10 @@ def build_calculation_trace(
                     steps.append(
                         _step(
                             row=row, col=col, channel=CHANNEL_NAMES[channel_index], before=before,
-                            after=after, low=entry.low, high=entry.high, bits=entry.bits,
+                            after=after,
+                            rgb_before=_rgb_pair(source, row, col),
+                            rgb_after=_rgb_pair(target, row, col),
+                            low=entry.low, high=entry.high, bits=entry.bits,
                             payload_bits=word, payload_value=value,
                         )
                     )
