@@ -106,7 +106,7 @@ export function StegoFocusPane({
   return (
     <section
       aria-label="Focused stego inspection"
-      className="flex h-full min-h-0 flex-col gap-3 overflow-hidden p-4 sm:p-5"
+      className="flex h-full min-h-0 flex-col gap-3 overflow-visible p-4 sm:p-5"
     >
       {/* Top Bar: Quick Scheme Switcher + All 3 + Stego/Heatmap Toggle */}
       <div className="focus-top-bar flex shrink-0 flex-wrap items-center justify-between gap-2">
@@ -179,92 +179,94 @@ export function StegoFocusPane({
 
       {/* Center: Large Focused Image or Overflow Card */}
       <div className="focus-swap-content flex min-h-0 flex-1 flex-col gap-3">
-        <div
-          ref={focusMediaRef}
-          data-flip-id={`stego-${result.scheme}`}
-          className={`flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl border p-3 sm:p-4 ${
-            isProposed
-              ? 'border-[#9A6B2F]/45 bg-[#FDFCF9]'
-              : 'border-[#E4DFD3] bg-[#FDFCF9]'
-          }`}
-        >
-          {isOk ? (
-            <>
-              <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
-                {activeBase64 ? (
-                  <img
-                    src={base64ToPngDataUrl(activeBase64)}
-                    alt={`${meta.title} ${viewMode === 'stego' ? 'stego PNG' : '×20 difference heatmap'}`}
-                    className="h-full max-h-full w-full max-w-full rounded-lg object-contain"
-                  />
-                ) : (
-                  <span className="text-xs text-[#6B665C]">Image unavailable</span>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            ref={focusMediaRef}
+            data-flip-id={`stego-${result.scheme}`}
+            className={`flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl border p-3 sm:p-4 ${
+              isProposed
+                ? 'border-[#9A6B2F]/45 bg-[#FDFCF9]'
+                : 'border-[#E4DFD3] bg-[#FDFCF9]'
+            }`}
+          >
+            {isOk ? (
+              <>
+                <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
+                  {activeBase64 ? (
+                    <img
+                      src={base64ToPngDataUrl(activeBase64)}
+                      alt={`${meta.title} ${viewMode === 'stego' ? 'stego PNG' : '×20 difference heatmap'}`}
+                      className="h-full max-h-full w-full max-w-full rounded-lg object-contain"
+                    />
+                  ) : (
+                    <span className="text-xs text-[#6B665C]">Image unavailable</span>
+                  )}
+                </div>
+
+                {viewMode === 'heatmap' && embedResult.payload_bytes < 1024 && (
+                  <p className="mt-2 shrink-0 rounded-md border border-[#E4DFD3] bg-[#F6F4EF] px-3 py-1 text-[11px] text-[#6B665C]">
+                    Sub-1 KB payload ({formatBytes(embedResult.payload_bytes)}) — only top pixel rows
+                    were modified, leaving the rest of the difference map black.
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="w-full max-w-md space-y-3">
+                <div
+                  className={`rounded-xl border p-4 ${
+                    result.status === 'overflow'
+                      ? 'border-[#B45309]/35 bg-[#B45309]/[0.06] text-[#111110]'
+                      : 'border-rose-300 bg-rose-50 text-rose-950'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#B45309]">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>
+                      {result.status === 'overflow'
+                        ? 'Payload Exceeds Scheme Capacity'
+                        : 'Embedding Failed'}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-[#6B665C]">
+                    {result.error ?? 'No stego image was produced for this scheme.'}
+                  </p>
+                </div>
+
+                {result.capacity && (
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#E4DFD3] bg-[#F6F4EF] p-3 font-mono-tabular text-[11px] sm:grid-cols-4">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">
+                        Payload
+                      </div>
+                      <div className="mt-0.5 font-semibold text-[#B45309]">
+                        {formatBytes(embedResult.payload_bytes)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">
+                        Max Cap
+                      </div>
+                      <div className="mt-0.5 font-semibold text-[#111110]">
+                        {formatBytes(result.capacity.max_payload_bytes)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">
+                        Total Bits
+                      </div>
+                      <div className="mt-0.5 text-[#111110]">
+                        {result.capacity.capacity_bits.toLocaleString()} b
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">Rate</div>
+                      <div className="mt-0.5 text-[#111110]">{result.capacity.bpp.toFixed(3)} bpp</div>
+                    </div>
+                  </div>
                 )}
               </div>
-
-              {viewMode === 'heatmap' && embedResult.payload_bytes < 1024 && (
-                <p className="mt-2 shrink-0 rounded-md border border-[#E4DFD3] bg-[#F6F4EF] px-3 py-1 text-[11px] text-[#6B665C]">
-                  Sub-1 KB payload ({formatBytes(embedResult.payload_bytes)}) — only top pixel rows
-                  were modified, leaving the rest of the difference map black.
-                </p>
-              )}
-            </>
-          ) : (
-            <div className="w-full max-w-md space-y-3">
-              <div
-                className={`rounded-xl border p-4 ${
-                  result.status === 'overflow'
-                    ? 'border-[#B45309]/35 bg-[#B45309]/[0.06] text-[#111110]'
-                    : 'border-rose-300 bg-rose-50 text-rose-950'
-                }`}
-              >
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#B45309]">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>
-                    {result.status === 'overflow'
-                      ? 'Payload Exceeds Scheme Capacity'
-                      : 'Embedding Failed'}
-                  </span>
-                </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-[#6B665C]">
-                  {result.error ?? 'No stego image was produced for this scheme.'}
-                </p>
-              </div>
-
-              {result.capacity && (
-                <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#E4DFD3] bg-[#F6F4EF] p-3 font-mono-tabular text-[11px] sm:grid-cols-4">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">
-                      Payload
-                    </div>
-                    <div className="mt-0.5 font-semibold text-[#B45309]">
-                      {formatBytes(embedResult.payload_bytes)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">
-                      Max Cap
-                    </div>
-                    <div className="mt-0.5 font-semibold text-[#111110]">
-                      {formatBytes(result.capacity.max_payload_bytes)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">
-                      Total Bits
-                    </div>
-                    <div className="mt-0.5 text-[#111110]">
-                      {result.capacity.capacity_bits.toLocaleString()} b
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[#6B665C]">Rate</div>
-                    <div className="mt-0.5 text-[#111110]">{result.capacity.bpp.toFixed(3)} bpp</div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Bottom Details Panel */}

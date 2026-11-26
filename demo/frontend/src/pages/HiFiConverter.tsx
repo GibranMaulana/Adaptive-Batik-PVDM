@@ -183,24 +183,44 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
   const s1Max = selectedSample?.capacities.scheme1.max_payload_bytes ?? null;
   const s1Overflow = s1Max !== null && payloadBytes > s1Max;
 
+  useEffect(() => {
+    return () => {
+      beat1TimelineRef.current?.kill();
+      beat1TimelineRef.current = null;
+    };
+  }, []);
+
   // 1. Hero image swap animation when picking a different sample in compose
   useGSAP(
     () => {
       if (!selectedSampleKey) return;
       const prevKey = prevSampleKeyRef.current;
-      prevSampleKeyRef.current = selectedSampleKey;
 
-      if (!prevKey || prevKey === selectedSampleKey) return;
-      if (activeMode !== 'embed' || embedStage !== 'compose') return;
+      if (!prevKey) {
+        prevSampleKeyRef.current = selectedSampleKey;
+        return;
+      }
+      if (prevKey === selectedSampleKey) return;
+      if (activeMode !== 'embed' || embedStage !== 'compose') {
+        prevSampleKeyRef.current = selectedSampleKey;
+        return;
+      }
 
       const heroImg = heroImgRef.current;
-      if (!heroImg) return;
+      if (!heroImg) {
+        prevSampleKeyRef.current = selectedSampleKey;
+        return;
+      }
 
+      let reverted = false;
       const mm = gsap.matchMedia();
       mm.add(
         { reduceMotion: '(prefers-reduced-motion: reduce)' },
         (context) => {
-          if (context.conditions?.reduceMotion) return;
+          if (context.conditions?.reduceMotion) {
+            prevSampleKeyRef.current = selectedSampleKey;
+            return;
+          }
 
           gsap.fromTo(
             heroImg,
@@ -212,20 +232,29 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               duration: 0.45,
               ease: 'power3.out',
               clearProps: 'transform,opacity',
+              onComplete: () => {
+                if (!reverted) {
+                  prevSampleKeyRef.current = selectedSampleKey;
+                }
+              },
             },
           );
         },
         stageRef,
       );
 
-      return () => mm.revert();
+      return () => {
+        reverted = true;
+        mm.revert();
+      };
     },
-    { scope: stageRef, dependencies: [selectedSampleKey] },
+    { scope: stageRef, dependencies: [selectedSampleKey], revertOnUpdate: true },
   );
 
   // 2. Stage choreography: compose <-> overview <-> focus <-> extract
   useGSAP(
     () => {
+      let reverted = false;
       const mm = gsap.matchMedia();
       mm.add(
         { reduceMotion: '(prefers-reduced-motion: reduce)' },
@@ -241,6 +270,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
           if (activeMode === 'extract') {
             pendingFlipStateRef.current = null;
             stegoFlipStateRef.current = null;
+            overviewEnterNeedsBeat3Ref.current = false;
             gsap.from('.extract-stage', {
               y: 16,
               autoAlpha: 0,
@@ -253,16 +283,20 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
           if (embedStage === 'compose') {
             const flipState = pendingFlipStateRef.current;
-            pendingFlipStateRef.current = null;
 
             if (flipState && sampleFrameRef.current) {
               Flip.from(flipState, {
                 duration: 0.58,
                 ease: 'power3.inOut',
                 scale: true,
+                absolute: true,
+                zIndex: 30,
                 onComplete: () => {
-                  if (sampleFrameRef.current) {
-                    gsap.set(sampleFrameRef.current, { clearProps: 'transform' });
+                  if (!reverted && pendingFlipStateRef.current === flipState) {
+                    pendingFlipStateRef.current = null;
+                  }
+                  if (!reverted && sampleFrameRef.current) {
+                    gsap.set(sampleFrameRef.current, { clearProps: 'transform,zIndex' });
                   }
                 },
               });
@@ -323,23 +357,23 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
           if (embedStage === 'overview') {
             const heroFlipState = pendingFlipStateRef.current;
-            pendingFlipStateRef.current = null;
-
             const stegoFlipState = stegoFlipStateRef.current;
-            stegoFlipStateRef.current = null;
-
             const useBeat3Delay = overviewEnterNeedsBeat3Ref.current;
-            overviewEnterNeedsBeat3Ref.current = false;
 
             // Beat 2: Seamless Flip of persistent hero sample from center -> left 50%
             if (heroFlipState && sampleFrameRef.current) {
               Flip.from(heroFlipState, {
-                duration: 0.65,
+                duration: 0.68,
                 ease: 'power3.inOut',
                 scale: true,
+                absolute: true,
+                zIndex: 30,
                 onComplete: () => {
-                  if (sampleFrameRef.current) {
-                    gsap.set(sampleFrameRef.current, { clearProps: 'transform' });
+                  if (!reverted && pendingFlipStateRef.current === heroFlipState) {
+                    pendingFlipStateRef.current = null;
+                  }
+                  if (!reverted && sampleFrameRef.current) {
+                    gsap.set(sampleFrameRef.current, { clearProps: 'transform,zIndex' });
                   }
                 },
               });
@@ -369,8 +403,15 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                   duration: 0.44,
                   ease: 'power3.inOut',
                   scale: true,
+                  absolute: true,
+                  zIndex: 30,
                   onComplete: () => {
-                    gsap.set(targetTile, { clearProps: 'transform' });
+                    if (!reverted && stegoFlipStateRef.current === stegoFlipState) {
+                      stegoFlipStateRef.current = null;
+                    }
+                    if (!reverted) {
+                      gsap.set(targetTile, { clearProps: 'transform,zIndex' });
+                    }
                   },
                 });
               }
@@ -412,6 +453,11 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 delay: useBeat3Delay ? 0.27 : 0.06,
                 ease: 'power3.out',
                 clearProps: 'transform,opacity',
+                onComplete: () => {
+                  if (!reverted) {
+                    overviewEnterNeedsBeat3Ref.current = false;
+                  }
+                },
               },
             );
             return;
@@ -419,7 +465,6 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
           if (embedStage === 'focus') {
             const stegoFlipState = stegoFlipStateRef.current;
-            stegoFlipStateRef.current = null;
 
             if (stegoFlipState && focusMediaRef.current) {
               Flip.from(stegoFlipState, {
@@ -427,9 +472,14 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 duration: 0.48,
                 ease: 'power3.inOut',
                 scale: true,
+                absolute: true,
+                zIndex: 30,
                 onComplete: () => {
-                  if (focusMediaRef.current) {
-                    gsap.set(focusMediaRef.current, { clearProps: 'transform' });
+                  if (!reverted && stegoFlipStateRef.current === stegoFlipState) {
+                    stegoFlipStateRef.current = null;
+                  }
+                  if (!reverted && focusMediaRef.current) {
+                    gsap.set(focusMediaRef.current, { clearProps: 'transform,zIndex' });
                   }
                 },
               });
@@ -478,10 +528,11 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
       );
 
       return () => {
+        reverted = true;
         mm.revert();
       };
     },
-    { scope: stageRef, dependencies: [activeMode, embedStage] },
+    { scope: stageRef, dependencies: [activeMode, embedStage], revertOnUpdate: true },
   );
 
   // 3. Fade stego images cleanly into the 3 overview slots as soon as embedResult arrives
@@ -513,7 +564,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
 
       return () => mm.revert();
     },
-    { scope: stageRef, dependencies: [embedResult] },
+    { scope: stageRef, dependencies: [embedResult], revertOnUpdate: true },
   );
 
   // 4. Crisp crossfade/slide when switching between 01 | 02 | 03 in focus stage
@@ -524,17 +575,27 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         return;
       }
       const prev = prevFocusedSchemeRef.current;
-      prevFocusedSchemeRef.current = focusedScheme;
 
-      if (!prev || prev === focusedScheme) return;
-      if (activeMode !== 'embed' || embedStage !== 'focus') return;
+      if (!prev) {
+        prevFocusedSchemeRef.current = focusedScheme;
+        return;
+      }
+      if (prev === focusedScheme) return;
+      if (activeMode !== 'embed' || embedStage !== 'focus') {
+        prevFocusedSchemeRef.current = focusedScheme;
+        return;
+      }
 
       const dir = focusSwitchDirRef.current;
+      let reverted = false;
       const mm = gsap.matchMedia();
       mm.add(
         { reduceMotion: '(prefers-reduced-motion: reduce)' },
         (context) => {
-          if (context.conditions?.reduceMotion) return;
+          if (context.conditions?.reduceMotion) {
+            prevFocusedSchemeRef.current = focusedScheme;
+            return;
+          }
 
           gsap.fromTo(
             '.focus-swap-content',
@@ -545,15 +606,23 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               duration: 0.34,
               ease: 'power3.out',
               clearProps: 'transform,opacity',
+              onComplete: () => {
+                if (!reverted) {
+                  prevFocusedSchemeRef.current = focusedScheme;
+                }
+              },
             },
           );
         },
         stageRef,
       );
 
-      return () => mm.revert();
+      return () => {
+        reverted = true;
+        mm.revert();
+      };
     },
-    { scope: stageRef, dependencies: [focusedScheme] },
+    { scope: stageRef, dependencies: [focusedScheme], revertOnUpdate: true },
   );
 
   const handleEmbed = () => {
@@ -566,6 +635,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     setEmbedError(null);
     setEmbedResult(null);
     setFocusedScheme(null);
+    stegoFlipStateRef.current = null;
     prevFocusedSchemeRef.current = null;
 
     // Kick off API call immediately in parallel with Beat 1 choreography
@@ -604,7 +674,11 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
         // Gracefully Flip back to compose if already in overview/focus
         if (!prefersReducedMotion() && sampleFrameRef.current) {
           pendingFlipStateRef.current = Flip.getState(sampleFrameRef.current);
+        } else {
+          pendingFlipStateRef.current = null;
         }
+        stegoFlipStateRef.current = null;
+        overviewEnterNeedsBeat3Ref.current = false;
         setFocusedScheme(null);
         setEmbedStage('compose');
       });
@@ -681,6 +755,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     }
 
     stegoFlipStateRef.current = null;
+    overviewEnterNeedsBeat3Ref.current = false;
     prevFocusedSchemeRef.current = null;
     setFocusedScheme(null);
     setEmbedStage('compose');
@@ -693,6 +768,8 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     } else {
       stegoFlipStateRef.current = null;
     }
+    pendingFlipStateRef.current = null;
+    overviewEnterNeedsBeat3Ref.current = false;
     prevFocusedSchemeRef.current = null;
     lastFocusedSchemeRef.current = scheme;
     setFocusedScheme(scheme);
@@ -714,9 +791,23 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
     } else {
       stegoFlipStateRef.current = null;
     }
+    pendingFlipStateRef.current = null;
+    overviewEnterNeedsBeat3Ref.current = false;
     lastFocusedSchemeRef.current = focusedScheme;
     prevFocusedSchemeRef.current = null;
     setEmbedStage('overview');
+  };
+
+  const handleModeChange = (nextMode: ActiveMode) => {
+    if (nextMode === activeMode) return;
+    if (nextMode === 'extract' && beat1TimelineRef.current) {
+      embedRequestIdRef.current += 1;
+      beat1TimelineRef.current.kill();
+      beat1TimelineRef.current = null;
+      setIsTransitioningOut(false);
+      setIsEmbedding(false);
+    }
+    setActiveMode(nextMode);
   };
 
   const handleExtractFile = (file: File) => {
@@ -762,7 +853,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               type="button"
               role="tab"
               aria-selected={activeMode === 'embed'}
-              onClick={() => setActiveMode('embed')}
+              onClick={() => handleModeChange('embed')}
               className={`rounded-full px-3.5 py-1 text-xs font-medium transition-colors ${
                 activeMode === 'embed'
                   ? 'bg-[#111110] text-[#FDFCF9]'
@@ -775,7 +866,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               type="button"
               role="tab"
               aria-selected={activeMode === 'extract'}
-              onClick={() => setActiveMode('extract')}
+              onClick={() => handleModeChange('extract')}
               className={`rounded-full px-3.5 py-1 text-xs font-medium transition-colors ${
                 activeMode === 'extract'
                   ? 'bg-[#111110] text-[#FDFCF9]'
@@ -823,8 +914,8 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
           <main
             className={
               isCompose
-                ? 'flex h-[calc(100dvh-3.5rem)] w-full flex-col overflow-hidden'
-                : 'grid min-h-[calc(100dvh-3.5rem)] w-full grid-cols-1 lg:h-[calc(100dvh-3.5rem)] lg:grid-cols-2 lg:overflow-hidden'
+                ? 'relative flex h-[calc(100dvh-3.5rem)] w-full flex-col overflow-hidden'
+                : 'relative grid min-h-[calc(100dvh-3.5rem)] w-full grid-cols-1 overflow-hidden lg:h-[calc(100dvh-3.5rem)] lg:grid-cols-2'
             }
           >
             {/* Left / Center Hero Pane — Keeps sampleFrameRef mounted across all 3 stages */}
@@ -832,8 +923,8 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
               key="hero-pane"
               className={
                 isCompose
-                  ? 'flex h-full min-h-0 w-full flex-col items-center justify-between overflow-hidden'
-                  : 'flex min-h-0 w-full flex-col justify-between overflow-hidden border-b border-[#E4DFD3] bg-[#F6F4EF] p-4 sm:p-5 lg:h-full lg:border-r lg:border-b-0 lg:p-7'
+                  ? 'flex h-full min-h-0 w-full flex-col items-center justify-between overflow-visible'
+                  : 'flex min-h-0 w-full flex-col justify-between overflow-visible border-b border-[#E4DFD3] bg-[#F6F4EF] p-4 sm:p-5 lg:h-full lg:border-r lg:border-b-0 lg:p-7'
               }
             >
               {isCompose ? (
@@ -877,24 +968,28 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
                 className="flex min-h-0 w-full flex-1 flex-col items-center justify-center px-4 py-2"
               >
                 <div
-                  ref={sampleFrameRef}
-                  data-flip-id="hero-sample"
-                  className={`relative aspect-square max-h-full overflow-hidden rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] shadow-[0_24px_60px_-32px_rgba(17,17,16,0.28)] will-change-transform ${
+                  className={`aspect-square max-h-full shrink-0 ${
                     isCompose
                       ? 'w-[clamp(200px,36vh,340px)]'
                       : 'w-[clamp(220px,44vh,420px)]'
                   }`}
                 >
-                  {displaySample ? (
-                    <img
-                      ref={heroImgRef}
-                      src={displaySample.image_url}
-                      alt={`${displaySample.motif} ${displaySample.filename}`}
-                      className="h-full w-full object-cover will-change-transform"
-                    />
-                  ) : (
-                    <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
-                  )}
+                  <div
+                    ref={sampleFrameRef}
+                    data-flip-id="hero-sample"
+                    className="relative z-10 h-full w-full overflow-hidden rounded-2xl border border-[#E4DFD3] bg-[#FDFCF9] shadow-[0_24px_60px_-32px_rgba(17,17,16,0.28)] will-change-transform"
+                  >
+                    {displaySample ? (
+                      <img
+                        ref={heroImgRef}
+                        src={displaySample.image_url}
+                        alt={`${displaySample.motif} ${displaySample.filename}`}
+                        className="h-full w-full object-cover will-change-transform"
+                      />
+                    ) : (
+                      <div className="h-full w-full motion-safe:animate-pulse bg-[#EFECE3]" />
+                    )}
+                  </div>
                 </div>
 
                 {isCompose && displaySample && (
