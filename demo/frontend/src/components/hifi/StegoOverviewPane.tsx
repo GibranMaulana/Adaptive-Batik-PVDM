@@ -30,7 +30,7 @@ export function StegoOverviewPane({
   return (
     <section
       aria-label="Stego overview gallery"
-      className="flex h-full min-h-0 flex-col overflow-visible p-4 sm:p-5"
+      className="flex h-full min-h-0 flex-col overflow-hidden p-4 sm:p-5"
     >
       <div className="grid min-h-0 flex-1 grid-rows-3 gap-3">
         {ALL_SCHEMES.map((scheme) => {
@@ -53,7 +53,7 @@ export function StegoOverviewPane({
                 );
                 onSelectScheme(scheme, mediaEl);
               }}
-              className={`stego-overview-slot group relative flex min-h-0 w-full items-center justify-center overflow-visible rounded-2xl border p-3 text-left transition-colors focus:outline-none disabled:cursor-wait ${
+              className={`stego-overview-slot group relative flex min-h-0 w-full items-center justify-center overflow-hidden rounded-2xl border p-3 text-left transition-colors focus:outline-none disabled:cursor-wait ${
                 isProposed
                   ? 'border-[#9A6B2F]/45 bg-[#FDFCF9] hover:border-[#9A6B2F] hover:shadow-[0_12px_32px_-20px_rgba(154,107,47,0.45)]'
                   : 'border-[#E4DFD3] bg-[#FDFCF9] hover:border-[#9A6B2F]/75 hover:shadow-[0_12px_28px_-22px_rgba(17,17,16,0.22)]'
