@@ -1,1 +1,1 @@
-"""Phase 0 scaffold package for the Adaptive Batik PVDM interactive demo backend."""
+"""FastAPI backend for the Adaptive Batik PVDM demonstration."""
