@@ -39,7 +39,7 @@ export function TopSampleSlider({
   };
 
   return (
-    <div className="compose-top-slider w-full shrink-0 px-4 pt-4 pb-2 sm:px-6">
+    <div className="compose-top-slider w-full shrink-0 px-4 pb-2 sm:px-6">
       {samplesLoading ? (
         <div className="flex items-center justify-center gap-2 py-2">
           {Array.from({ length: 12 }).map((_, idx) => (

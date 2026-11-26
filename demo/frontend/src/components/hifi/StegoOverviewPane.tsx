@@ -6,7 +6,7 @@ import { ALL_SCHEMES, formatBytes } from '../../utils/payload';
 interface StegoOverviewPaneProps {
   embedResult: EmbedResponse | null;
   isEmbedding: boolean;
-  onSelectScheme: (scheme: SchemeName, tileEl: HTMLElement | null) => void;
+  onSelectScheme: (scheme: SchemeName) => void;
 }
 
 const OVERVIEW_PILLS: Record<SchemeName, string> = {
@@ -46,12 +46,9 @@ export function StegoOverviewPane({
               key={scheme}
               type="button"
               disabled={isLoading}
-              onClick={(e) => {
+              onClick={() => {
                 if (!result) return;
-                const mediaEl = e.currentTarget.querySelector<HTMLElement>(
-                  `[data-flip-id="stego-${scheme}"]`,
-                );
-                onSelectScheme(scheme, mediaEl);
+                onSelectScheme(scheme);
               }}
               className={`stego-overview-slot group relative flex min-h-0 w-full items-center justify-center overflow-hidden rounded-2xl border p-3 text-left transition-colors focus:outline-none disabled:cursor-wait ${
                 isProposed
@@ -79,10 +76,7 @@ export function StegoOverviewPane({
               )}
 
               {/* Slot body */}
-              <div
-                data-flip-id={`stego-${scheme}`}
-                className="flex h-full w-full min-h-0 items-center justify-center"
-              >
+              <div className="flex h-full w-full min-h-0 items-center justify-center">
                 {isLoading ? (
                   <div className="flex aspect-square h-full max-h-full items-center justify-center rounded-xl border border-[#E4DFD3] bg-[#F6F4EF] motion-safe:animate-pulse">
                     <div className="h-2 w-12 rounded-full bg-[#E4DFD3]" />

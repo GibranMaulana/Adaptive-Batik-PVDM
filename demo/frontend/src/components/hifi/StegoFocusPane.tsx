@@ -1,4 +1,3 @@
-import type { RefObject } from 'react';
 import { AlertCircle, ArrowRight, Download, Eye, LayoutGrid, Layers } from 'lucide-react';
 import { base64PngToFile, base64ToPngDataUrl, downloadBase64Png } from '../../api/client';
 import type { EmbedResponse, SchemeEmbedResult, SchemeName } from '../../api/types';
@@ -17,7 +16,6 @@ interface StegoFocusPaneProps {
   embedResult: EmbedResponse;
   focusedScheme: SchemeName;
   viewMode: GalleryViewMode;
-  focusMediaRef: RefObject<HTMLDivElement | null>;
   onSwitchScheme: (scheme: SchemeName) => void;
   onShowAll: () => void;
   onChangeViewMode: (mode: GalleryViewMode) => void;
@@ -73,7 +71,6 @@ export function StegoFocusPane({
   embedResult,
   focusedScheme,
   viewMode,
-  focusMediaRef,
   onSwitchScheme,
   onShowAll,
   onChangeViewMode,
@@ -180,8 +177,6 @@ export function StegoFocusPane({
       {/* Center: Large Focused Image or Overflow Card */}
       <div className="focus-swap-content flex min-h-0 flex-1 flex-col gap-3">
         <div
-          ref={focusMediaRef}
-          data-flip-id={`stego-${result.scheme}`}
           className={`flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl border p-3 sm:p-4 ${
             isProposed
               ? 'border-[#9A6B2F]/45 bg-[#FDFCF9]'
