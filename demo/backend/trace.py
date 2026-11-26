@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from src.pvdm_core import bytes_to_bits, find_range, pack_message
+from src.pvdm_core import bytes_to_bits, embed_pair, find_range, pack_message
 from src.pvdm_rgb_batik import (
     CHANNEL_NAMES,
     RANGE_TABLE_BLUE_SYM,
@@ -49,6 +49,7 @@ def _step(
     bits: int,
     payload_bits: str,
     payload_value: int,
+    fobp_triggered: bool,
     indicator: int | None = None,
 ) -> dict[str, object]:
     modulo = 2**bits
@@ -68,6 +69,7 @@ def _step(
         "payload_value": payload_value,
         "frem_before": (before[0] + before[1]) % modulo,
         "frem_after": (after[0] + after[1]) % modulo,
+        "fobp_triggered": bool(fobp_triggered),
     }
     if indicator is not None:
         item["indicator"] = indicator
@@ -75,7 +77,7 @@ def _step(
 
 
 def build_calculation_trace(
-    scheme: str, cover: Image.Image, stego: Image.Image, payload: bytes, max_steps: int = 8
+    scheme: str, cover: Image.Image, stego: Image.Image, payload: bytes, max_steps: int = 24
 ) -> dict[str, object]:
     """Return the first real PVDM writes from an already-completed embed."""
     source = np.asarray(cover.convert("RGB"), dtype=np.uint8)
@@ -102,13 +104,15 @@ def build_calculation_trace(
                 entry = find_range(abs(before[0] - before[1]), table)
                 word, value = _word(stream, cursor, entry.bits)
                 if len(steps) < max_steps and (len(steps) < 4 or cursor >= 32):
+                    _, _, fobp_triggered = embed_pair(before[0], before[1], value, entry.bits)
                     steps.append(
                         _step(
                             row=row, col=col, channel=channel, before=before, after=after,
                             rgb_before=_rgb_pair(source, row, col),
                             rgb_after=_rgb_pair(target, row, col),
                             low=entry.low, high=entry.high, bits=entry.bits,
-                            payload_bits=word, payload_value=value, indicator=indicator,
+                            payload_bits=word, payload_value=value,
+                            fobp_triggered=fobp_triggered, indicator=indicator,
                         )
                     )
                 cursor += entry.bits
@@ -123,6 +127,7 @@ def build_calculation_trace(
                 entry = find_range(abs(before[0] - before[1]), table)
                 word, value = _word(stream, cursor, entry.bits)
                 if len(steps) < max_steps and (len(steps) < 4 or cursor >= 32):
+                    _, _, fobp_triggered = embed_pair(before[0], before[1], value, entry.bits)
                     steps.append(
                         _step(
                             row=row, col=col, channel=CHANNEL_NAMES[channel_index], before=before,
@@ -131,6 +136,7 @@ def build_calculation_trace(
                             rgb_after=_rgb_pair(target, row, col),
                             low=entry.low, high=entry.high, bits=entry.bits,
                             payload_bits=word, payload_value=value,
+                            fobp_triggered=fobp_triggered,
                         )
                     )
                 cursor += entry.bits

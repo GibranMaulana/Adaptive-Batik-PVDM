@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import concurrent.futures
 import functools
 import io
 import json
+import math
 import sys
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Callable
 
@@ -128,55 +132,193 @@ def difference_heatmap(cover: Image.Image, stego: Image.Image) -> Image.Image:
     return Image.fromarray(heatmap, mode="RGB")
 
 
-def embed_all(cover: Image.Image, payload: bytes) -> list[SchemeEmbedResult]:
-    """Run all schemes independently so one overflow never aborts the others."""
-    results: list[SchemeEmbedResult] = []
-    for name, (embed_fn, _, capacity_fn) in _SCHEMES.items():
-        capacity = _capacity_summary(capacity_fn(cover))
-        required_bits = (len(payload) + 4) * 8
-        if required_bits > capacity.capacity_bits:
-            results.append(
-                SchemeEmbedResult(
-                    scheme=name,
-                    status="overflow",
-                    error=(
-                        f"Payload + 32-bit header requires {required_bits} bits; "
-                        f"{name} capacity is {capacity.capacity_bits} bits "
-                        f"({capacity.max_payload_bytes} payload bytes maximum)."
-                    ),
-                    capacity=capacity,
-                )
-            )
-            continue
+def _sanitize_json(value: object) -> object:
+    """Convert non-finite floats (inf/-inf/nan) to None for RFC 8259 JSON compliance."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _sanitize_json(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_json(item) for item in value]
+    return value
 
-        started = time.perf_counter()
+
+def _ndjson_line(payload: dict[str, object]) -> str:
+    return json.dumps(_sanitize_json(payload), allow_nan=False) + "\n"
+
+
+def _scheme_capacity(name: str, cover: Image.Image) -> CapacitySummary:
+    _, _, capacity_fn = _SCHEMES[name]
+    return _capacity_summary(capacity_fn(cover))
+
+
+def embed_single_scheme(
+    name: str,
+    cover: Image.Image,
+    payload: bytes,
+    capacity: CapacitySummary | None = None,
+) -> SchemeEmbedResult:
+    """Run a single PVDM scheme independently so overflows/failures remain isolated."""
+    embed_fn, _, capacity_fn = _SCHEMES[name]
+    resolved_capacity = (
+        capacity if capacity is not None else _capacity_summary(capacity_fn(cover))
+    )
+    required_bits = (len(payload) + 4) * 8
+    if required_bits > resolved_capacity.capacity_bits:
+        return SchemeEmbedResult(
+            scheme=name,
+            status="overflow",
+            error=(
+                f"Payload + 32-bit header requires {required_bits} bits; "
+                f"{name} capacity is {resolved_capacity.capacity_bits} bits "
+                f"({resolved_capacity.max_payload_bytes} payload bytes maximum)."
+            ),
+            capacity=resolved_capacity,
+        )
+
+    started = time.perf_counter()
+    try:
+        stego, embed_stats = embed_fn(cover, payload)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        return SchemeEmbedResult(
+            scheme=name,
+            status="ok",
+            elapsed_ms=round(elapsed_ms, 3),
+            capacity=resolved_capacity,
+            embed_stats=embed_stats,
+            psnr=compute_psnr(cover, stego),
+            ssim=compute_ssim(cover, stego),
+            stego_png_base64=png_base64(stego),
+            heatmap_png_base64=png_base64(difference_heatmap(cover, stego)),
+            calculation_trace=build_calculation_trace(name, cover, stego, payload),
+        )
+    except Exception as exc:  # Each scheme reports failure independently.
+        return SchemeEmbedResult(
+            scheme=name,
+            status="failed",
+            error=str(exc),
+            capacity=resolved_capacity,
+        )
+
+
+def embed_all(cover: Image.Image, payload: bytes) -> list[SchemeEmbedResult]:
+    """Run all schemes concurrently while preserving [scheme1, scheme2, scheme3] order."""
+    scheme_names = list(_SCHEMES)
+    cover_copies = {name: cover.copy() for name in scheme_names}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            name: executor.submit(embed_single_scheme, name, cover_copies[name], payload)
+            for name in scheme_names
+        }
+        return [futures[name].result() for name in scheme_names]
+
+
+async def embed_stream(
+    cover: Image.Image,
+    payload: bytes,
+    motif: str,
+    filename: str,
+) -> AsyncIterator[str]:
+    """Stream real-time NDJSON events while all 3 schemes execute concurrently."""
+    scheme_names = list(_SCHEMES)
+    required_bits = (len(payload) + 4) * 8
+    cover_copies = {name: cover.copy() for name in scheme_names}
+
+    capacity_list = await asyncio.gather(
+        *(
+            asyncio.to_thread(_scheme_capacity, name, cover_copies[name])
+            for name in scheme_names
+        )
+    )
+    capacities = dict(zip(scheme_names, capacity_list))
+
+    queue: asyncio.Queue[dict[str, object] | None] = asyncio.Queue()
+
+    async def _run_scheme(name: str, capacity: CapacitySummary) -> None:
         try:
-            stego, embed_stats = embed_fn(cover, payload)
-            elapsed_ms = (time.perf_counter() - started) * 1000
-            results.append(
-                SchemeEmbedResult(
-                    scheme=name,
-                    status="ok",
-                    elapsed_ms=round(elapsed_ms, 3),
-                    capacity=capacity,
-                    embed_stats=embed_stats,
-                    psnr=compute_psnr(cover, stego),
-                    ssim=compute_ssim(cover, stego),
-                    stego_png_base64=png_base64(stego),
-                    heatmap_png_base64=png_base64(difference_heatmap(cover, stego)),
-                    calculation_trace=build_calculation_trace(name, cover, stego, payload),
+            try:
+                result = await asyncio.to_thread(
+                    embed_single_scheme,
+                    name,
+                    cover_copies[name],
+                    payload,
+                    capacity,
                 )
-            )
-        except Exception as exc:  # Each scheme reports failure independently.
-            results.append(
-                SchemeEmbedResult(
+            except Exception as exc:
+                result = SchemeEmbedResult(
                     scheme=name,
                     status="failed",
                     error=str(exc),
                     capacity=capacity,
                 )
+
+            trace = result.calculation_trace
+            if trace and isinstance(trace.get("steps"), list):
+                steps = trace["steps"]
+                total_steps = len(steps)
+                for step_index, step in enumerate(steps):
+                    queue.put_nowait(
+                        {
+                            "type": "scheme_step",
+                            "scheme": name,
+                            "step_index": step_index,
+                            "total_steps": total_steps,
+                            "step": step,
+                        }
+                    )
+
+            queue.put_nowait(
+                {
+                    "type": "scheme_result",
+                    "scheme": name,
+                    "result": result.model_dump(),
+                }
             )
-    return results
+        finally:
+            queue.put_nowait(None)
+
+    tasks = [
+        asyncio.create_task(_run_scheme(name, capacities[name]))
+        for name in scheme_names
+    ]
+
+    try:
+        for name in scheme_names:
+            yield _ndjson_line(
+                {
+                    "type": "scheme_start",
+                    "scheme": name,
+                    "width": cover.width,
+                    "height": cover.height,
+                    "payload_bytes": len(payload),
+                    "required_bits": required_bits,
+                    "capacity": capacities[name].model_dump(),
+                }
+            )
+
+        completed = 0
+        while completed < len(tasks):
+            event = await queue.get()
+            if event is None:
+                completed += 1
+                continue
+            yield _ndjson_line(event)
+
+        await asyncio.gather(*tasks)
+
+        yield _ndjson_line(
+            {
+                "type": "done",
+                "motif": motif,
+                "filename": filename,
+                "payload_bytes": len(payload),
+            }
+        )
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def load_uploaded_png(raw_png: bytes) -> Image.Image:

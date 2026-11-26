@@ -11,7 +11,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import FileResponse  # noqa: E402
+from fastapi.responses import FileResponse, StreamingResponse  # noqa: E402
 
 from demo.backend.schemas import (  # noqa: E402
     EmbedRequest,
@@ -23,6 +23,7 @@ from demo.backend.schemas import (  # noqa: E402
 )
 from demo.backend.service import (  # noqa: E402
     embed_all,
+    embed_stream,
     extract_candidates,
     list_samples,
     load_sample,
@@ -77,6 +78,23 @@ def embed(request: EmbedRequest) -> EmbedResponse:
         filename=request.filename,
         payload_bytes=len(payload),
         results=embed_all(cover, payload),
+    )
+
+
+@app.post("/api/embed/stream")
+def embed_streaming(request: EmbedRequest) -> StreamingResponse:
+    try:
+        cover = load_sample(request.motif, request.filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    payload = request.message.encode("utf-8")
+    return StreamingResponse(
+        embed_stream(cover, payload, request.motif, request.filename),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

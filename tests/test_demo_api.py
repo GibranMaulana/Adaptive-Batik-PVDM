@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from demo.backend.app import app
 from demo.backend.service import _list_samples_cached
+from demo.backend.trace import build_calculation_trace
 from src.evaluation_metrics import compute_ber
+from src.pvdm_core import embed_pair
+from src.pvdm_rgb_batik import scheme2_embed
 
 
 client = TestClient(app)
@@ -304,3 +309,189 @@ def test_embed_calculation_trace_steps_include_valid_rgb_neighbor_triplets():
                 list(stego.getpixel((col0, row))),
                 list(stego.getpixel((col1, row))),
             ]
+
+
+def _parse_strict_ndjson(raw_text: str) -> list[dict]:
+    """Parse NDJSON strictly rejecting non-standard JSON constants (NaN/Infinity)."""
+    def _reject_constant(token: str) -> None:
+        raise ValueError(f"Non-RFC8259 JSON constant in NDJSON stream: {token}")
+
+    lines = [line for line in raw_text.splitlines() if line.strip()]
+    return [json.loads(line, parse_constant=_reject_constant) for line in lines]
+
+
+def test_embed_calculation_trace_includes_authentic_fobp_triggered_and_24_steps():
+    message = "FOBP trace verification payload — Batik PVDM " * 25
+    body = _embed(message)
+    assert [result["scheme"] for result in body["results"]] == [
+        "scheme1",
+        "scheme2",
+        "scheme3",
+    ]
+
+    for result in body["results"]:
+        assert result["status"] == "ok", result
+        trace = result["calculation_trace"]
+        assert trace is not None
+        steps = trace["steps"]
+        assert len(steps) == 24
+        assert trace["displayed_steps"] == 24
+        for step in steps:
+            assert "fobp_triggered" in step
+            assert isinstance(step["fobp_triggered"], bool)
+            _, _, expected_fobp = embed_pair(
+                step["before"][0],
+                step["before"][1],
+                step["payload_value"],
+                step["bits"],
+            )
+            assert step["fobp_triggered"] is expected_fobp
+
+    # Synthetic boundary-pixel image verifies fobp_triggered flips True when FOBP fires.
+    boundary_cover = Image.fromarray(np.zeros((16, 16, 3), dtype=np.uint8), mode="RGB")
+    boundary_payload = b"\xff\xff\xff\xff\xff\xff"
+    stego, _ = scheme2_embed(boundary_cover, boundary_payload)
+    boundary_trace = build_calculation_trace("scheme2", boundary_cover, stego, boundary_payload)
+    assert any(step["fobp_triggered"] is True for step in boundary_trace["steps"])
+
+
+def test_embed_stream_emits_ndjson_lifecycle_events_for_all_schemes():
+    message = "Concurrent NDJSON streaming verification — Batik PVDM " * 10
+    payload = message.encode("utf-8")
+    expected_step_keys = {
+        "row",
+        "columns",
+        "channel",
+        "before",
+        "after",
+        "range",
+        "difference_before",
+        "difference_after",
+        "bits",
+        "payload_bits",
+        "payload_value",
+        "frem_before",
+        "frem_after",
+        "fobp_triggered",
+        "rgb_before",
+        "rgb_after",
+    }
+
+    with client.stream(
+        "POST",
+        "/api/embed/stream",
+        json={"motif": "parang", "filename": "parang_01.png", "message": message},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/x-ndjson")
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.headers.get("x-accel-buffering") == "no"
+        raw_text = "".join(response.iter_text())
+
+    events = _parse_strict_ndjson(raw_text)
+    assert len(events) > 4
+
+    # First 3 events are scheme_start for all 3 schemes.
+    start_events = [event for event in events if event["type"] == "scheme_start"]
+    assert len(start_events) == 3
+    assert [event["scheme"] for event in events[:3]] == ["scheme1", "scheme2", "scheme3"]
+    for start in start_events:
+        assert start["width"] == 512
+        assert start["height"] == 512
+        assert start["payload_bytes"] == len(payload)
+        assert start["required_bits"] == (len(payload) + 4) * 8
+        assert set(start["capacity"].keys()) >= {
+            "capacity_bits",
+            "capacity_bytes",
+            "max_payload_bytes",
+            "bpp",
+            "per_channel_bits",
+        }
+
+    # Verify scheme_step events for all 3 schemes.
+    steps_by_scheme: dict[str, list[dict]] = {"scheme1": [], "scheme2": [], "scheme3": []}
+    results_by_scheme: dict[str, dict] = {}
+    for event in events:
+        if event["type"] == "scheme_step":
+            scheme = event["scheme"]
+            assert scheme not in results_by_scheme, "scheme_step arrived after scheme_result"
+            steps_by_scheme[scheme].append(event)
+            step = event["step"]
+            assert expected_step_keys.issubset(step.keys())
+            assert isinstance(step["fobp_triggered"], bool)
+            if scheme == "scheme1":
+                assert "indicator" in step
+        elif event["type"] == "scheme_result":
+            results_by_scheme[event["scheme"]] = event["result"]
+
+    assert set(results_by_scheme.keys()) == {"scheme1", "scheme2", "scheme3"}
+    for scheme in ("scheme1", "scheme2", "scheme3"):
+        result = results_by_scheme[scheme]
+        assert result["status"] == "ok", result
+        streamed_steps = steps_by_scheme[scheme]
+        assert len(streamed_steps) == 24
+        assert [item["step_index"] for item in streamed_steps] == list(range(len(streamed_steps)))
+        assert all(item["total_steps"] == len(streamed_steps) for item in streamed_steps)
+        assert len(result["calculation_trace"]["steps"]) == len(streamed_steps)
+
+    # Scheme 1 leaves Red unmodified so psnr_r is serialized as JSON null (None).
+    assert results_by_scheme["scheme1"]["psnr"]["psnr_r"] is None
+
+    # Stream ends with done event.
+    assert events[-1] == {
+        "type": "done",
+        "motif": "parang",
+        "filename": "parang_01.png",
+        "payload_bytes": len(payload),
+    }
+
+
+def test_embed_stream_50kb_overflows_scheme1_while_scheme2_and_3_complete_ok():
+    message = "A" * (50 * 1024)
+    payload_bytes = len(message.encode("utf-8"))
+
+    with client.stream(
+        "POST",
+        "/api/embed/stream",
+        json={"motif": "parang", "filename": "parang_01.png", "message": message},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/x-ndjson")
+        raw_text = "".join(response.iter_text())
+
+    events = _parse_strict_ndjson(raw_text)
+    start_schemes = {event["scheme"] for event in events if event["type"] == "scheme_start"}
+    assert start_schemes == {"scheme1", "scheme2", "scheme3"}
+
+    step_counts = {"scheme1": 0, "scheme2": 0, "scheme3": 0}
+    results_by_scheme: dict[str, dict] = {}
+    for event in events:
+        if event["type"] == "scheme_step":
+            step_counts[event["scheme"]] += 1
+        elif event["type"] == "scheme_result":
+            results_by_scheme[event["scheme"]] = event["result"]
+
+    assert set(results_by_scheme.keys()) == {"scheme1", "scheme2", "scheme3"}
+    assert results_by_scheme["scheme1"]["status"] == "overflow"
+    assert results_by_scheme["scheme1"]["error"]
+    assert step_counts["scheme1"] == 0
+
+    for scheme in ("scheme2", "scheme3"):
+        assert results_by_scheme[scheme]["status"] == "ok", results_by_scheme[scheme]
+        assert step_counts[scheme] == 24
+        assert results_by_scheme[scheme]["stego_png_base64"]
+
+    assert events[-1] == {
+        "type": "done",
+        "motif": "parang",
+        "filename": "parang_01.png",
+        "payload_bytes": payload_bytes,
+    }
+
+
+def test_embed_stream_returns_404_for_unknown_sample():
+    response = client.post(
+        "/api/embed/stream",
+        json={"motif": "unknown", "filename": "missing.png", "message": "hello"},
+    )
+    assert response.status_code == 404
