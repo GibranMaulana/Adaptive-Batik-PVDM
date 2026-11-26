@@ -3,7 +3,7 @@
 @theme {
   --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   --color-alabaster: #F6F4EF;
   --color-ivory: #FDFCF9;
@@ -30,7 +30,7 @@
 }
 
 .font-mono-tabular {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
 }
 
