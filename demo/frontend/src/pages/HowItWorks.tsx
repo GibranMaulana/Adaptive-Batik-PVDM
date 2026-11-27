@@ -1,37 +1,15 @@
 import './how-it-works.css';
-import { useState } from 'react';
+import { RangeTables } from './RangeTables';
 import kawung from '../assets/kawung-guide.webp';
 
 const chapters = [
   ['citra', 'Citra dan pesan'],
   ['skema', 'Tiga skema RGB'],
+  ['rentang', 'Tabel rentang lengkap'],
   ['hitung', 'Perhitungan piksel'],
   ['ekstraksi', 'Ekstraksi pesan'],
   ['eksperimen', 'Hasil penelitian'],
 ];
-
-function RangeExplorer() {
-  const [difference, setDifference] = useState(6);
-  const tables = [
-    { channel: 'Merah', ends: [7, 15, 31, 63, 127, 255] },
-    { channel: 'Hijau', ends: [3, 7, 15, 31, 63, 127, 255] },
-    { channel: 'Biru', ends: [15, 31, 63, 127, 255] },
-  ];
-  return <div className="range-explorer">
-    <label htmlFor="difference">Selisih intensitas <strong>{difference}</strong></label>
-    <input id="difference" type="range" min="0" max="255" value={difference} onChange={event => setDifference(Number(event.target.value))} />
-    <table><caption>Tabel kuantisasi Skema 3. Rentang aktif dicetak tebal.</caption>
-      <thead><tr><th>Kanal</th><th>Rentang selisih</th><th>Kapasitas aktif</th></tr></thead>
-      <tbody>{tables.map(({channel, ends}) => {
-        const active = ends.findIndex(end => difference <= end);
-        const start = (ends[active - 1] ?? -1) + 1;
-        return <tr key={channel}><th>{channel}</th><td>{ends.map((end, i) => {
-          const range = ((ends[i - 1] ?? -1) + 1) + '–' + end;
-          return <span key={end} className={i === active ? 'active-range' : 'interval'}>{range}</span>;
-        })}</td><td>{Math.log2(ends[active] - start + 1)} bit</td></tr>;
-      })}</tbody></table>
-  </div>;
-}
 
 export function HowItWorks() {
   return <div className="batik-guide" lang="id">
@@ -54,8 +32,9 @@ export function HowItWorks() {
         <dl><dt>Skema 1 · Pixel Indicator</dt><dd>Dua bit terendah kanal merah piksel pertama menentukan tujuan. Untuk 01 program memakai hijau, untuk 10 memakai biru, dan untuk 00 atau 11 pasangan dilewati.</dd>
         <dt>Skema 2 · RGB simetris</dt><dd>Semua kanal aktif memakai tabel enam rentang yang sama. Ini memberi dasar untuk mengukur dampak perlakuan berbeda pada setiap kanal.</dd>
         <dt>Skema 3 · RGB asimetris berbasis HVS</dt><dd>Pada model luminansi Y = 0,299R + 0,587G + 0,114B, hijau memiliki bobot terbesar. Tim menggunakan pertimbangan sistem penglihatan manusia (HVS) ini untuk merancang rentang lebih sempit pada hijau dan lebih lebar pada biru di area halus. Geser selisih di bawah untuk melihat efeknya.</dd></dl>
-        <RangeExplorer/>
+
       </section>
+      <RangeTables/>
       <section id="hitung"><h2>Ikuti satu pasangan piksel</h2>
         <p>Pada baris pertama Kawung 01, kolom 6 dan 7 (indeks mulai dari nol) memiliki RGB (178, 131, 80) dan (220, 175, 117). Saat Skema 3 mencapai kanal merah pasangan ini, program telah membaca header dan bit pertama A. Lima bit berikutnya adalah <code>10000</code>, bernilai 16.</p>
         <ol><li><b>Ukur selisih.</b> P dan Q adalah intensitas merah kedua piksel.<code className="equation">d = |P − Q| = |178 − 220| = 42</code></li>
