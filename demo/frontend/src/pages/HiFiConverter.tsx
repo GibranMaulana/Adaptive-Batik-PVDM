@@ -890,6 +890,7 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            <a href="/how-it-works" className="hidden text-xs font-medium text-[#6B665C] hover:underline md:inline">How It Works</a>
             <div
               className="hidden items-center gap-1.5 text-[11px] text-[#6B665C] tabular-nums sm:inline-flex"
               title={health ? `API ${health.status} (${health.phase})` : 'API status'}
@@ -921,6 +922,9 @@ export function HiFiConverter({ onNavigate }: HiFiConverterProps) {
           </div>
         </div>
       </header>
+      <div className="px-4 pt-2 text-right md:hidden">
+        <a href="/how-it-works" className="text-xs font-medium text-[#6B665C] underline">How It Works</a>
+      </div>
 
       <div ref={stageRef}>
         {activeMode === 'embed' && embedStage === 'compose' && (

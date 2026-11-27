@@ -1,5 +1,6 @@
+import './how-it-works.css';
 import { useState } from 'react';
-import kawung from '../../../../../data/batik_512/kawung/kawung_01.png';
+import kawung from '../assets/kawung-guide.webp';
 
 const chapters = [
   ['citra', 'Citra dan pesan'],
@@ -81,7 +82,7 @@ function ResearchResults() {
     <dl><dt>Berapa banyak ruang yang tersedia?</dt><dd>Jumlahkan t semua pasangan dan kanal aktif untuk memperoleh kapasitas bruto C dalam bit. Kapasitas pesan dalam byte adalah ⌊C/8⌋ − 4 jika header muat. Laju kapasitas bpp = C / (tinggi × lebar). Pada Kawung, rata-rata kapasitas bruto Skema 3 mencapai 5,23 bpp. Pada 45 citra, korelasi proporsi area tepi dengan bpp Skema 3 mencapai r = 0,9574.</dd>
     <dt>Seberapa besar perubahan gambar?</dt><dd>MSE adalah rata-rata kuadrat selisih intensitas asli dan hasil. PSNR mengubah besarnya galat menjadi desibel. Pada kanal yang sama, PSNR lebih tinggi berarti galat lebih kecil.<code className="equation">MSE = Σ (asli − hasil)² / jumlah nilai<br/>PSNR = 10 log₁₀(255² / MSE)</code>SSIM membandingkan kecerahan, kontras, dan struktur lokal. Nilai mendekati 1 menunjukkan kemiripan tinggi. Paper menghitungnya pada kanal RGB dan luminansi Y.</dd>
     <dt>Apakah pesan kembali utuh?</dt><dd>BER = (jumlah bit salah / jumlah bit pesan) × 100%. Dalam pengujian yang muat, BER mencapai 0%. Angka ini mengukur pemulihan pesan dari PNG hasil.</dd></dl>
-    <table><caption>Rata-rata 15 citra Kawung pada payload 10 KiB</caption><thead><tr><th>Skema</th><th>PSNR hijau (dB)</th><th>PSNR RGB (dB)</th><th>BER</th></tr></thead><tbody>{[['1','50,69','52,50'],['2','52,50','52,50'],['3','53,09','51,95']].map(([scheme,g,rgb]) => <tr key={scheme}><th>{scheme}</th><td>{g}</td><td>{rgb}</td><td>0%</td></tr>)}</tbody></table>
+    <table><caption>Rata-rata 15 citra Kawung pada payload 10 KiB</caption><thead><tr><th>Skema</th><th>PSNR hijau (dB)</th><th>PSNR RGB (dB)</th><th>BER</th></tr></thead><tbody>{[['1','50,69','52,50'],['2','52,50','52,51'],['3','53,09','51,95']].map(([scheme,g,rgb]) => <tr key={scheme}><th>{scheme}</th><td>{g}</td><td>{rgb}</td><td>0%</td></tr>)}</tbody></table>
     <p>Dibanding Skema 2, Skema 3 menaikkan PSNR hijau pada contoh uji ini, sedangkan PSNR RGB turun. Hasil tersebut memperlihatkan konsekuensi pilihan tabel untuk melindungi hijau.</p>
     <a href="https://github.com/GibranMaulana/Adaptive-Batik-PVDM/blob/feat/demo/paper/main.tex">Baca metode dan tabel hasil dalam laporan ↗</a>
   </section>;

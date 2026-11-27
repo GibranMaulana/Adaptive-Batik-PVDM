@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { HowItWorks } from './pages/HowItWorks';
 import { HiFiConverter } from './pages/HiFiConverter';
 import { LowFiWorkbench } from './pages/LowFiWorkbench';
 
@@ -30,6 +31,8 @@ function App() {
     window.history.pushState(null, '', nextPath);
     setPathname(nextPath);
   }, []);
+
+  if (pathname === '/how-it-works' || pathname === '/how-it-works/') return <HowItWorks />;
 
   if (isTestRoute(pathname)) {
     return <LowFiWorkbench />;
